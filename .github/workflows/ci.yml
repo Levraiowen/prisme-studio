@@ -1,0 +1,29 @@
+# Integration continue : tests du moteur, contre-verification mathematique, build, image Docker.
+name: ci
+on: [push, pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements-dev.txt
+      - name: Tests du moteur
+        run: node tests/run_tests.mjs
+      - name: Robustesse (cas limites)
+        run: node tests/robustness.mjs
+      - name: Mode grands volumes (exactitude)
+        run: node tests/bench_big.mjs
+      - name: Contre-verification numpy / scipy / scikit-learn
+        run: python tests/crosscheck.py
+      - name: Banc de charge (100 000 lignes)
+        run: node --max-old-space-size=4096 tests/bench.mjs 100000 20
+      - name: Build
+        run: python build.py
+      - uses: actions/upload-artifact@v4
+        with: { name: prisme-studio, path: dist/Prisme-Studio.html }
+      - name: Image Docker
+        run: docker build -f deploy/Dockerfile -t prisme-studio:ci .

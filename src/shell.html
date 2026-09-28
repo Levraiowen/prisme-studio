@@ -1,0 +1,146 @@
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 40 40" aria-hidden="true">
+        <defs><linearGradient id="bg" x1="0" x2="1"><stop offset="0" stop-color="#FF7A59"/><stop offset=".34" stop-color="#FFC85C"/><stop offset=".67" stop-color="#4FD8E8"/><stop offset="1" stop-color="#A08BFF"/></linearGradient></defs>
+        <path d="M4 20 L17 20" stroke="currentColor" stroke-width="1.6" opacity=".55"/>
+        <path d="M20 6 L31 30 L9 30 Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M23 18 L38 12 M23.5 20 L38 20 M23 22 L38 28" stroke="url(#bg)" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <div><b>Prisme <em>Studio</em> <span class="ver" id="verTag"></span></b><small>Analyse multidimensionnelle</small></div>
+    </div>
+    <span class="pill" id="dsPill"><span class="dot"></span><b id="dsName">—</b><span id="dsDim"></span></span>
+    <span class="pill eng" id="engPill" title="Moteur de calcul">—</span>
+    <span class="pill busy" id="busyPill" hidden role="status"><i></i><span>calcul</span></span>
+    <button class="pill bigback" id="bigBack" type="button" hidden title="Revenir au tableau de bord du fichier volumineux"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 18V9M9 18V5M14 18v-7M19 18V3"/></svg>Grands volumes · <b></b></button>
+    <button class="btn" id="cmdBtn" type="button" aria-label="Ouvrir la palette de commandes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z"/></svg><span class="cmdl">Commandes</span> <span class="kbd">Ctrl K</span></button>
+    <input type="file" id="fileInput" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.json,.parquet" hidden><input type="file" id="projInput" accept=".json,application/json" hidden>
+    <div class="menu-wrap"><button class="btn" id="projBtn" type="button" aria-haspopup="menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg>Projet</button>
+      <div class="menu" id="projMenu" role="menu" hidden><button type="button" data-pm="save" role="menuitem">Enregistrer le projet<small>.prisme.json : données, réglages, groupes</small></button><button type="button" data-pm="open" role="menuitem">Ouvrir un projet<small>reprendre une analyse enregistrée</small></button><button type="button" data-pm="about" role="menuitem">Méthodes et références<small>ce que calcule chaque vue, et d'où ça vient</small></button></div></div>
+    <button class="btn" id="importBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 15V3M7 8l5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>Importer</button>
+    <button class="btn prime" id="exportTop" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"/></svg>Rapport</button>
+    <button class="btn iconbtn" id="themeBtn" type="button" aria-label="Changer de thème"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+  </header>
+
+  <aside class="rail" aria-label="Réglages">
+    <section class="card">
+      <h2><i>01</i> Données</h2>
+      <div class="drop" id="drop" role="button" tabindex="0" aria-label="Déposer un fichier CSV ou Excel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M3 16v2a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3v-2"/></svg>
+        <b>Déposez votre base</b><span>CSV, Excel, JSON ou Parquet · une ligne par individu</span>
+      </div>
+      <form class="urlform" id="urlForm"><input id="urlIn" type="url" placeholder="ou l'URL d'un fichier (CSV, JSON, Parquet)" aria-label="URL d'un fichier de données"><button class="btn sm" type="submit">Charger</button></form>
+      <label class="bigopt" title="Lecture en flux et calculs en colonnes : plusieurs millions de lignes. Automatique au-delà de 40 Mo."><input type="checkbox" id="bigForce"><span><b>Grands volumes</b> · CSV de plusieurs millions de lignes</span></label>
+      <div class="examples" id="examples"></div>
+    </section>
+    <section class="card">
+      <h2><i>02</i> Méthode</h2>
+      <div class="seg" id="methodSeg" role="group" aria-label="Méthode">
+        <button type="button" data-m="ACP">ACP</button><button type="button" data-m="ACM">ACM</button><button type="button" data-m="AFC">AFC</button>
+      </div>
+      <p class="hint" id="methodHint"></p>
+    </section>
+    <section class="card">
+      <h2><i>03</i> Variables</h2>
+      <div id="varsBox"></div>
+      <div id="errBox" class="err" hidden></div>
+    </section>
+    <section class="card">
+      <h2><i>04</i> Encodage visuel</h2>
+      <div id="encBox"></div>
+    </section>
+    <section class="card">
+      <h2><i>05</i> Raccourcis</h2>
+      <div class="shortcuts">
+        <span class="kbd">Ctrl K</span><span>Palette de commandes</span>
+        <span class="kbd">1 2 3 4</span><span>Vue 3D, plans 1·2, 1·3, 2·3</span>
+        <span class="kbd">T</span><span>Tour guidé (soutenance)</span>
+        <span class="kbd">Espace</span><span>Rejouer la projection</span>
+        <span class="kbd">F</span><span>Plein écran</span>
+        <span class="kbd">R N P B</span><span>Rotation, noms, projections, barycentres</span>
+        <span class="kbd">H</span><span>Tour de l'hyperespace · <span class="kbd">C</span> converger vers l'ACP</span>
+        <span class="kbd">A</span><span>Anatomie de l'ACP</span>
+        <span class="kbd">M D U</span><span>Réseau, densité, incertitude</span>
+        <span class="kbd">L</span><span>Lasso · ou <span class="kbd">Maj</span> + glisser dans la 3D</span>
+        <span class="kbd">E</span><span>Expliquer la sélection · <span class="kbd">Ctrl</span> + clic : ajouter un point</span>
+      </div>
+    </section>
+  </aside>
+
+  <main>
+    <section class="stage frame" id="stage" aria-label="Espace factoriel en 3D">
+      <div class="scan"></div>
+      <div class="labels" id="labels"></div>
+      <svg class="lasso" id="lasso" aria-hidden="true"></svg>
+      <div class="hud hud-tl">
+        <div class="eyebrow"><span class="live"></span><span id="stageEyebrow">Espace factoriel</span></div>
+        <h1 id="stageTitle">—</h1>
+        <div class="legend" id="axisLegend"></div>
+        <div class="enc" id="encLegend"></div>
+      </div>
+      <div class="hud hud-tr">
+        <div class="views" id="views" role="group" aria-label="Point de vue">
+          <button type="button" data-v="3d" aria-pressed="true">3D</button>
+          <button type="button" data-v="12">Plan 1·2</button>
+          <button type="button" data-v="13">Plan 1·3</button>
+          <button type="button" data-v="23">Plan 2·3</button>
+          <button type="button" data-v="hyper" title="Tour de l'hyperespace (H)" class="hyv">Rⁿ</button>
+        </div>
+        <div class="tools" role="group" aria-label="Outils de la scène">
+          <button type="button" data-tool="lasso" title="Lasso : entourer des points (L, ou Maj + glisser)" aria-label="Lasso" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 21c1.5-1 2-2.5 1.5-4"/><ellipse cx="13" cy="9" rx="8" ry="5.5" stroke-dasharray="3 3"/><circle cx="8" cy="15" r="2"/></svg></button>
+          <button type="button" data-tool="replay" title="Rejouer la projection (Espace)" aria-label="Rejouer la projection"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></svg></button>
+          <button type="button" data-tool="tour" title="Tour guidé (T)" aria-label="Tour guidé"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 4v16l13-8z"/></svg></button>
+          <button type="button" data-tool="anat" title="Anatomie de l'ACP (A)" aria-label="Anatomie de l'ACP" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5-8 4.5-8-4.5z"/><path d="M4 12l8 4.5 8-4.5"/><path d="M4 16.5l8 4.5 8-4.5"/></svg></button>
+          <button type="button" data-tool="capture" title="Capturer la vue en PNG" aria-label="Capturer la vue en PNG"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+          <button type="button" data-tool="full" title="Plein écran (F)" aria-label="Plein écran"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+        </div>
+      </div>
+      <div class="hud hud-bl" id="toggles"></div>
+      <svg class="gizmo" id="gizmo" viewBox="-50 -50 100 100" aria-hidden="true"></svg>
+      <div class="telemetry" id="telemetry"></div>
+      <div class="tip" id="tip" hidden></div>
+      <div class="fiche" id="fiche" hidden></div>
+      <div class="tour" id="tour" hidden></div>
+      <div class="hycard" id="hyCard" hidden></div>
+      <div class="boot" id="boot" hidden><pre id="bootLog"></pre></div>
+    </section>
+
+    <section class="kpis" id="kpis"></section>
+
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Résultats">
+      <span class="tg">Comprendre</span>
+      <button role="tab" type="button" data-t="synthese" aria-selected="true">Synthèse</button>
+      <button role="tab" type="button" data-t="axes" aria-selected="false">Axes</button>
+      <button role="tab" type="button" data-t="variables" aria-selected="false">Variables</button>
+      <button role="tab" type="button" data-t="individus" aria-selected="false">Individus</button>
+      <span class="tg">Explorer</span>
+      <button role="tab" type="button" data-t="insights" aria-selected="false">Insights <span class="new ins" id="insBadge" hidden>0</span></button>
+      <button role="tab" type="button" data-t="projections" aria-selected="false">Projections</button>
+      <button role="tab" type="button" data-t="classes" aria-selected="false">Classes</button>
+      <button role="tab" type="button" data-t="matrices" aria-selected="false">Matrices</button>
+      <button role="tab" type="button" data-t="hyper" aria-selected="false">Hyperespace <span class="new hy">R<sup>n</sup></span></button>
+      <span class="tg">Données</span>
+      <button role="tab" type="button" data-t="profil" aria-selected="false">Profil</button>
+      <span class="tg">Outils</span>
+      <button role="tab" type="button" data-t="simulateur" aria-selected="false">Simulateur <span class="new">LIVE</span></button>
+      <button role="tab" type="button" data-t="labo" aria-selected="false">Labo <span class="new">LAB</span></button>
+      <button role="tab" type="button" data-t="rapport" aria-selected="false">Rapport</button>
+    </nav>
+    <section id="panel"></section>
+    <section class="bigv" id="big" hidden aria-label="Mode grands volumes"></section>
+  </main>
+</div>
+<div class="palette-back" id="palette" hidden>
+  <div class="palette" role="dialog" aria-modal="true" aria-label="Palette de commandes">
+    <input id="palInput" type="text" placeholder="Rechercher une commande : vue, exemple, méthode, capture…" autocomplete="off" aria-label="Rechercher une commande">
+    <ul id="palList" role="listbox"></ul>
+    <footer><span><span class="kbd">↑ ↓</span> naviguer</span><span><span class="kbd">Entrée</span> exécuter</span><span><span class="kbd">Échap</span> fermer</span></footer>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+<div class="selbar" id="selbar" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="Explication"><header><div><span class="eyebrow" id="drEy"></span><h3 id="drTitle"></h3></div><button class="dr-x" type="button" aria-label="Fermer">×</button></header><div class="drbody" id="drBody"></div></aside>
+<div class="about-back" id="about" hidden><div class="about" role="dialog" aria-modal="true" aria-label="Méthodes et références">
+  <header><div><span class="eyebrow">Prisme Studio</span><h2>Méthodes et références</h2></div><button class="ab-x" type="button" aria-label="Fermer">×</button></header>
+  <p class="ab-lead">Tout est calculé dans votre navigateur : les données ne quittent jamais votre poste. Chaque méthode suit une référence publiée. Le moteur passe 53 tests automatiques et 38 comparaisons indépendantes avec numpy, scipy et scikit-learn (écart maximal 3·10⁻¹³). Les calculs lourds tournent dans un Web Worker ; au-delà de certaines tailles, les méthodes coûteuses travaillent sur un échantillon signalé à l'écran.</p>
+  <div class="ab-grid"><div><h4>Analyse factorielle (ACP, ACM, AFC)</h4><p>Lebart, Piron & Morineau (2006), <i>Statistique exploratoire multidimensionnelle</i> ; Husson, Lê & Pagès (2017), <i>Exploratory Multivariate Analysis by Example Using R</i>.</p></div><div><h4>Nombre d'axes</h4><p>Critère de Kaiser (1960), critère du coude (Cattell 1966), analyse parallèle (Horn 1965), bootstrap (Efron & Tibshirani 1993) aligné par Procrustes (Gower 1975).</p></div><div><h4>Validité de l'ACP</h4><p>Test de sphéricité de Bartlett (1950), indice KMO (Kaiser 1974).</p></div><div><h4>Valeurs-tests et description des sélections</h4><p>Lebart, Morineau & Piron (1995) ; description des classes à la manière de <i>catdes</i> (FactoMineR, Escoffier & Pagès). Loi hypergéométrique exacte pour les modalités.</p></div><div><h4>Classification (HCPC)</h4><p>Ward (1963) par chaîne des plus proches voisins (Murtagh 1983, mise à jour de Lance & Williams 1967), coupure au plus grand gain d'inertie, consolidation k-means (Husson, Josse & Pagès 2010).</p></div><div><h4>Valeurs manquantes</h4><p>ACP itérative régularisée (Josse & Husson 2012, méthode de missMDA).</p></div><div><h4>Atypiques</h4><p>T² de Hotelling avec limite bêta (Tracy, Young & Mason 1992) et écart au modèle Q avec l'approximation de Box (1954), Jackson & Mudholkar (1979).</p></div><div><h4>Dépendances</h4><p>Corrélations partielles (inverse de R), facteur d'inflation de la variance, rang de Spearman, corrélation de distance (Székely, Rizzo & Bakirov 2007), coefficient de bimodalité (Pfister et al. 2013).</p></div><div><h4>Scagnostics</h4><p>Tukey & Tukey ; Wilkinson, Anand & Grossman (2005), version robuste de cassowaryr (Mason, Lee, Laa & Cook).</p></div><div><h4>Projections non linéaires</h4><p>t-SNE (van der Maaten & Hinton 2008, taux d'apprentissage de Belkina et al. 2019), UMAP (McInnes, Healy & Melville 2018, bibliothèque umap-js). Fiabilité et continuité : Venna & Kaski (2001, 2006).</p></div><div><h4>Hyperespace</h4><p>Grand Tour (Asimov 1985 ; Buja, Cook, Asimov & Hurley 2005), coordonnées parallèles (Inselberg 1985), axes gradués du biplot prédictif (Gower & Hand 1996), densité par noyau (Scott 1992).</p></div><div><h4>Grands volumes</h4><p>Lecture en flux et colonnes typées ; cartes de densité par agrégation et égalisation d'histogramme (Datashader, Bednar et al.) ; filtrage croisé (imMens, Liu, Jiang & Heer 2013 ; Falcon, Moritz, Howe & Heer 2019) ; sélections décrites par la taille d'effet (Cohen 1988).</p></div><div><h4>Visualisation et interaction</h4><p>Matrice réordonnable (Bertin 1967), brushing & linking (Becker & Cleveland 1987), vues coordonnées (Roberts 2007), insights automatiques (Foresight, Demiralp et al. 2017 ; Voyager, Wongsuphasawat et al. 2016).</p></div></div></div></div>

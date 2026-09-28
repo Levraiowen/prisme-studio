@@ -1,0 +1,14 @@
+# fichiers construits (python build.py les régénère)
+dist/
+vendor/
+# fichiers de travail des tests
+tests/_*
+__pycache__/
+*.pyc
+node_modules/
+.wrangler/
+.netlify/
+# jeux de données : ne jamais publier de données réelles
+*.csv
+*.parquet
+*.xlsx

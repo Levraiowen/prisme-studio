@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prisme Studio intégré</title>
+<!-- Démonstration : une page tierce (portail, tableau de bord) pilote Prisme Studio dans une iframe par postMessage.
+     Servir le dossier du projet (python -m http.server) puis ouvrir http://localhost:8000/examples/embed.html -->
+<style>
+  :root { --bg: #0b0e17; --panel: #121726; --line: #232a3d; --text: #e9edf7; --muted: #8e98b0; --accent: #7c9cff; }
+  @media (prefers-color-scheme: light) { :root { --bg: #f4f6fb; --panel: #fff; --line: #dfe3ee; --text: #0d1222; --muted: #566079; --accent: #3d5bd9; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, "Segoe UI", sans-serif; display: grid; grid-template-columns: 320px 1fr; height: 100vh; }
+  aside { padding: 20px; border-right: 1px solid var(--line); background: var(--panel); overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+  h1 { font-size: 16px; margin: 0; } p { margin: 0; color: var(--muted); }
+  button { font: inherit; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; text-align: left; }
+  button:hover { border-color: var(--accent); }
+  pre { margin: 0; flex: 1; min-height: 160px; overflow: auto; font: 12px/1.45 ui-monospace, Consolas, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; white-space: pre-wrap; }
+  iframe { width: 100%; height: 100%; border: 0; }
+  @media (max-width: 800px) { body { grid-template-columns: 1fr; grid-template-rows: auto 70vh; height: auto; } }
+</style>
+</head>
+<body>
+<aside>
+  <h1>Portail de démonstration</h1>
+  <p>Cette page envoie des commandes à Prisme Studio et reçoit ses résultats. Les données restent dans le navigateur.</p>
+  <button id="load">Envoyer un tableau de 200 clients</button>
+  <button id="acm">Passer en ACM</button>
+  <button id="acp">Revenir à l'ACP</button>
+  <button id="sel">Sélectionner les 20 premiers clients</button>
+  <button id="res">Lire les résultats</button>
+  <pre id="log">En attente de Prisme Studio…</pre>
+</aside>
+<iframe id="prisme" src="../dist/Prisme-Studio.html" title="Prisme Studio"></iframe>
+<script>
+  const frame = document.getElementById("prisme"), logEl = document.getElementById("log");
+  const log = (...a) => { logEl.textContent = a.join(" ") + "\n" + logEl.textContent; };
+  const send = msg => frame.contentWindow.postMessage(msg, "*");
+  // jeu synthétique : 200 clients, 4 variables quantitatives et 2 qualitatives
+  function clients() {
+    let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647, g = () => Math.sqrt(-2 * Math.log(rnd())) * Math.cos(2 * Math.PI * rnd());
+    return Array.from({ length: 200 }, (_, i) => { const seg = ["Premium", "Standard", "Découverte"][i % 3], k = i % 3;
+      return { client: "C" + (1000 + i), segment: seg, canal: rnd() < 0.5 ? "Web" : "Magasin", age: Math.round(45 - k * 8 + g() * 9),
+        panier: +(120 - k * 35 + g() * 18).toFixed(2), visites: Math.max(1, Math.round(12 - k * 3 + g() * 3)), satisfaction: +(8 - k + g()).toFixed(1) }; });
+  }
+  document.getElementById("load").onclick = () => send({ type: "prisme:load", rows: clients(), name: "clients-portail" });
+  document.getElementById("acm").onclick = () => send({ type: "prisme:method", method: "ACM" });
+  document.getElementById("acp").onclick = () => send({ type: "prisme:method", method: "ACP" });
+  document.getElementById("sel").onclick = () => send({ type: "prisme:select", indices: Array.from({ length: 20 }, (_, i) => i) });
+  document.getElementById("res").onclick = () => send({ type: "prisme:results" });
+  window.addEventListener("message", e => {
+    if (e.source !== frame.contentWindow || !e.data || typeof e.data.type !== "string") return;
+    const { type, data } = e.data;
+    if (type === "prisme:ready") log("prêt · version", data.version);
+    else if (type === "prisme:loaded" || type === "prisme:result") log(type, "·", data.method, "·", data.n, "individus ·", data.axes, "axes ·", (data.inertiaPct || 0).toFixed(1) + " % d'inertie");
+    else if (type === "prisme:selection") log("sélection ·", data.count, "individus");
+    else if (type === "prisme:results") log("résultats ·", data ? data.method + " · valeurs propres " + data.eigenvalues.slice(0, 4).map(v => v.toFixed(3)).join(", ") + (data.clusters ? " · " + data.clusters.k + " classes" : "") : "aucun");
+    else if (type === "prisme:error") log("erreur ·", data.message);
+  });
+</script>
+</body>
+</html>
