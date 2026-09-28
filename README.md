@@ -104,4 +104,4 @@ La CI (`.github/workflows/ci.yml`) rejoue ces suites à chaque push.
 
 ## Auteur
 
-Owen, à partir d'un projet d'analyse de données de L3 (ACP, ACM, AFC) réalisé avec Mathéo.
+Owen, à partir d'un projet d'analyse de données de L3 (ACP, ACM, AFC).
