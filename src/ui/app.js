@@ -4,12 +4,13 @@ const state = { animKPI: false, table: null, types: null, source: "", example: "
   search: "", sort: null, error: null, clusters: null, colorMode: "groups", sim: null, labo: null, why: "",
   enc: { color: "groups", size: "uniform" }, hyperUI: { key: null, brush: {}, net: "brut", thr: 0.3, shepK: 2, recK: 2 },
   work: null, impInfo: null, prep: { missing: "drop", tr: {} }, supp: { quanti: [], quali: [] }, sel: new Set(), selSrc: "", isolate: false, groups: [],
-  hc: null, hcOpts: { k: null, dims: null, consol: true }, emb: {}, trustFrom: null, insights: null, insFilter: "tous", scag: null, mat: {}, calVar: null };
+  hc: null, hcOpts: { k: null, dims: null, consol: true }, emb: {}, trustFrom: null, insights: null, insFilter: "tous", scag: null, mat: {}, calVar: null,
+  target: null, tgt: null, tgtSel: null, cmp: null, time: null, timeCache: null, quality: null };
 const UI = {};
 function syncViews(v = "3d") { document.querySelectorAll("#views button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === v)); document.querySelector('[data-tool="anat"]')?.setAttribute("aria-pressed", v === "anat"); $("#stage").classList.toggle("hyper", v === "hyper" || v === "anat"); }
 
 function defaultParams(m) {
-  const t = state.table, ty = state.types;
+  const t = state.table, ty0 = state.types, tc = state.target?.col, ty = tc ? { ...ty0, quanti: ty0.quanti.filter(c => c !== tc), quali: ty0.quali.filter(c => c !== tc) } : ty0;   // la cible reste hors des variables actives
   if (m === "ACP") return { ident: ty.ident, vars: ty.quanti.slice(), color: ty.quali.find(c => new Set(t.rows.map(r => r[c])).size <= 10) || null, nAxes: null };
   if (m === "AFDM") { const card = c => new Set(t.rows.map(r => r[c]).filter(v => v !== null && v !== undefined)).size; return { ident: ty.ident, vars: ty.quanti.concat(ty.quali.filter(c => { const k = card(c); return k >= 2 && k <= 15; })), color: ty.quali.find(c => card(c) <= 10) || null, nAxes: null }; }
   if (m === "ACM") return { ident: ty.ident, vars: ty.quali.filter(c => { const k = new Set(t.rows.map(r => r[c]).filter(v => v !== null && v !== undefined)).size; return k >= 2 && k <= 15; }), color: null, nAxes: null };
@@ -20,6 +21,7 @@ function loadTable(table, source, exampleKey = null) {
   if (typeof BigUI !== "undefined" && BigUI.open_) BigUI.show(false);
   state.table = table; state.types = detect(table); state.source = source; state.example = exampleKey; state.axisNames = {}; state.enc = { color: "groups", size: "uniform" };
   state.prep = { missing: "drop", tr: {} }; state.supp = { quanti: [], quali: [] }; state.groups = []; state.calVar = null; state.mat = {}; state.hcOpts = { k: null, dims: null, consol: true }; Sel.clear(true); Drawer.close?.();
+  state.target = null; state.tgt = null; state.tgtSel = null; state.cmp = null; state.time = null; state.timeCache = null; state.quality = null;
   const [m, why] = suggest(table, state.types); state.method = m; state.why = why; state.params = defaultParams(m);
   renderRail(); run("project");
 }
@@ -103,7 +105,7 @@ function renderPanel() {
   const r = state.res; if (!r) return; document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.t === state.tab));
   if (state.tab !== "simulateur") Stage.setGhost(null);
   if (state.tab !== "hyper") Hyper.leave(); ProjUI.plots = {};
-  $("#panel").innerHTML = ({ synthese: pSynthese, axes: pAxes, variables: pVariables, individus: pIndividus, insights: pInsights, projections: pProjections, classes: pClasses, matrices: pMatrices, hyper: pHyper, profil: pProfil, simulateur: pSim, labo: pLabo, rapport: pRapport })[state.tab](r);
+  $("#panel").innerHTML = ({ synthese: pSynthese, axes: pAxes, variables: pVariables, individus: pIndividus, insights: pInsights, projections: pProjections, classes: pClasses, matrices: pMatrices, hyper: pHyper, cible: pCible, comparer: pCompare, temps: pTemps, profil: pProfil, simulateur: pSim, labo: pLabo, rapport: pRapport })[state.tab](r);
   if (state.tab === "hyper") Hyper.mount(); if (state.tab === "projections") ProjUI.mount(); if (state.tab === "matrices") MatUI.mount(); if (state.tab === "individus") markSelRows();
   if (state.tab === "simulateur") Sim.update();
   if (state.tab === "labo") Labo.autostart();
@@ -393,7 +395,7 @@ const Palette = {
   cmds() {
     const r = state.res, C = [];
     [["3d", "Vue 3D", "1"], ["12", "Vue plan 1·2", "2"], ["13", "Vue plan 1·3", "3"], ["23", "Vue plan 2·3", "4"]].forEach(([v, l, k]) => C.push({ l, k, g: "Vue", run: () => Stage.setView(v) }));
-    [["synthese", "Synthèse"], ["axes", "Axes"], ["variables", "Variables"], ["individus", "Individus"], ["insights", "Insights automatiques"], ["projections", "Projections : ACP, t-SNE, UMAP"], ["classes", "Classes (HCPC)"], ["matrices", "Matrices : scagnostics et Bertin"], ["profil", "Profil des données"], ["simulateur", "Simulateur d'individu"], ["labo", "Labo : bootstrap, Horn, k-means"], ["hyper", "Hyperespace : coordonnées parallèles, flux, réseau, Shepard"], ["rapport", "Rapport"]].forEach(([t, l]) => C.push({ l: "Ouvrir " + l, g: "Onglet", run: () => { state.tab = t; renderPanel(); $("#tabs").scrollIntoView({ behavior: reduced ? "auto" : "smooth" }); } }));
+    [["cible", "Cible : ce qui explique une variable (arbre de décision)"], ["comparer", "Comparer deux groupes"], ["temps", "Temps : évolution par période"], ["synthese", "Synthèse"], ["axes", "Axes"], ["variables", "Variables"], ["individus", "Individus"], ["insights", "Insights automatiques"], ["projections", "Projections : ACP, t-SNE, UMAP"], ["classes", "Classes (HCPC)"], ["matrices", "Matrices : scagnostics et Bertin"], ["profil", "Profil des données"], ["simulateur", "Simulateur d'individu"], ["labo", "Labo : bootstrap, Horn, k-means"], ["hyper", "Hyperespace : coordonnées parallèles, flux, réseau, Shepard"], ["rapport", "Rapport"]].forEach(([t, l]) => C.push({ l: "Ouvrir " + l, g: "Onglet", run: () => { state.tab = t; renderPanel(); $("#tabs").scrollIntoView({ behavior: reduced ? "auto" : "smooth" }); } }));
     ["ACP", "ACM", "AFC"].forEach(m => C.push({ l: "Méthode " + m, g: "Analyse", run: () => setMethod(m) }));
     Object.entries(EXEMPLES).forEach(([k, e]) => C.push({ l: `Charger l'exemple « ${e.label} »`, g: "Données", run: () => loadTable(parseCSV(e.csv, e.file), e.file, k) }));
     C.push({ l: "Importer un fichier", g: "Données", run: () => $("#fileInput").click(), big: true });
@@ -477,7 +479,7 @@ function bind() {
   $("#varsBox").addEventListener("change", e => { const k = e.target.dataset.p; if (!k) return; const v = e.target.value; state.params[k] = k === "nAxes" ? (v ? +v : null) : v || null; if (k === "rowName" || k === "colName") state.params[k] = v || (k === "rowName" ? "Lignes" : "Colonnes"); run(k === "nAxes" || k === "color" || k.endsWith("Name") ? "none" : "morph"); });
   $("#views").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (!b) return; if (b.dataset.v === "hyper") Stage.mode === "tour" ? Stage.exitHyper() : Stage.startHyper("tour"); else Stage.setView(b.dataset.v); });
   $("#encBox").addEventListener("change", e => { if (e.target.id === "encColor") setEnc("color", e.target.value); if (e.target.id === "encSize") setEnc("size", e.target.value); if (e.target.id === "calSel") { state.calVar = e.target.value || null; Stage.refreshCal(); renderHeader(); } });
-  bindSelection(); bindStudio(); BigUI.bind();
+  bindSelection(); bindStudio(); bindAnalyses(); BigUI.bind();
   $("#bigBack").onclick = () => { BigUI.show(true); requestAnimationFrame(() => BigUI.draw()); };
   document.addEventListener("prisme:sel", () => { if (state.tab === "hyper") Hyper.syncSel?.(); if (state.tab === "projections") ProjUI.redraw(); if (state.tab === "matrices") MatUI.redraw(); if (state.tab === "individus") markSelRows(); });
   document.addEventListener("click", e => { const g = e.target.closest("[data-goto]"); if (g) { e.preventDefault(); state.tab = g.dataset.goto; renderPanel(); $("#tabs").scrollIntoView({ behavior: reduced ? "auto" : "smooth" }); } });
@@ -550,7 +552,7 @@ function bind() {
 
 /* ------------------------------------------------------------------ demarrage */
 try { const th = localStorage.getItem("prisme-theme"); if (th) document.documentElement.dataset.theme = th; } catch (e) {}
-const TABS = ["synthese", "axes", "variables", "individus", "insights", "projections", "classes", "matrices", "hyper", "profil", "simulateur", "labo", "rapport"];
+const TABS = ["synthese", "axes", "variables", "individus", "insights", "projections", "classes", "matrices", "hyper", "cible", "comparer", "temps", "profil", "simulateur", "labo", "rapport"];
 bind(); bindAPI(); Stage.init();
 { const h = location.hash.slice(1); if (TABS.includes(h)) state.tab = h; }
 (async () => {

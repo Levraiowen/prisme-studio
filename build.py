@@ -13,8 +13,8 @@ import base64, hashlib, json, pathlib, shutil, subprocess, sys, urllib.parse, ur
 VERSION = "4.0.0"
 root = pathlib.Path(__file__).parent
 dist = root / "dist"
-CORE = ["engine.js", "datasets.js", "explore.js", "stats.js", "prep.js", "cluster.js", "embed.js", "scag.js", "insights.js", "big.js"]
-UI = ["charts.js", "stage.js", "select.js", "studio.js", "hyper.js", "api.js", "big.js", "app.js"]   # app.js en dernier : il lance l'application
+CORE = json.loads((root / "src/core/order.json").read_text(encoding="utf-8"))   # ordre de chargement du moteur (partage avec les tests)
+UI = ["charts.js", "stage.js", "select.js", "studio.js", "hyper.js", "api.js", "big.js", "analyses.js", "app.js"]   # app.js en dernier : il lance l'application
 J = "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/"
 LIBS = ["https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"] + [J + f for f in [
     "shaders/CopyShader.js", "shaders/LuminosityHighPassShader.js", "postprocessing/EffectComposer.js",

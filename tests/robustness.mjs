@@ -4,7 +4,7 @@
 //   node tests/robustness.mjs
 import fs from "node:fs"; import path from "node:path"; import os from "node:os"; import { fileURLToPath, pathToFileURL } from "node:url";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const CORE = ["engine.js", "datasets.js", "explore.js", "stats.js", "prep.js", "cluster.js", "embed.js", "scag.js", "insights.js"];
+const CORE = JSON.parse(fs.readFileSync(path.join(root, "src/core/order.json"), "utf8"));
 const stubs = `const matchMedia = () => ({ matches: true }), document = { querySelector: () => null, documentElement: { dataset: {} } }, getComputedStyle = () => ({ getPropertyValue: () => "" }), window = {};
 const Papa = { parse: (t, o) => { const d = o && o.delimiter || ([",", ";", "\\t", "|"].map(c => [c, t.split("\\n")[0].split(c).length]).sort((a, b) => b[1] - a[1])[0][0]); return { data: t.split(/\\r?\\n/).filter(l => l.trim() !== "").map(l => l.split(d)) }; } };
 const state = { axisNames: {} };\n`;
@@ -50,6 +50,11 @@ for (const [name, text] of Object.entries(CASES)) {
   const log = []; let t, ty;
   try { t = parseCSV(text, name + ".csv"); ty = detect(t); log.push("types q=" + ty.quanti.length + " l=" + ty.quali.length + (ty.ident ? " id=" + ty.ident : "") + (ty.text && ty.text.length ? " texte=" + ty.text.length : "")); }
   catch (e) { checks++; if (bad(e)) { fails++; console.log("✗", name, "lecture :", e.stack.split("\n").slice(0, 3).join(" | ")); } else console.log("·", name, "→ refusé :", e.message); continue; }
+  // qualite, dates, et chaque colonne essayee comme cible (arbre compris)
+  checks++;
+  try { qualityReport(t, ty); for (const c of t.columns) { try { targetRun(t, { target: c, cols: t.columns.filter(x => x !== c), depth: 3 }); } catch (e) { if (bad(e)) throw e; } }
+    const dc = dateColumns(t); if (dc.length) deriveDate({ ...t, rows: t.rows.map(r => ({ ...r })) }, dc[0]); log.push("qualité et cibles ok"); }
+  catch (e) { if (bad(e)) { fails++; console.log("✗", name, "qualité/cible :", e.stack.split("\n").slice(0, 4).join(" | ")); } else log.push("qualité/cible refusé : " + e.message); }
   for (const m of ["ACP", "ACM", "AFC", "AFDM"]) {
     checks++;
     try {

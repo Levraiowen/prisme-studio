@@ -727,3 +727,39 @@ body.bigmode main > .stage, body.bigmode main > .kpis, body.bigmode main > .tabs
 /* AFDM : type de chaque variable dans les puces */
 .chip .ck{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:6px;vertical-align:1px;background:var(--a2)}
 .chip .ck.l{border-radius:50%;background:var(--a1)}
+/* ------------------------------------------------------------------ Cible, Comparer, Temps, Qualite */
+.tg-head,.cmp-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.tg-ctl,.cmp-ctl{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.tg-ctl label,.cmp-ctl label{display:grid;gap:4px;font-size:11.5px;color:var(--muted)}
+.tg-ctl select,.cmp-ctl select{padding:7px 9px;border-radius:9px;border:1px solid var(--line-2);background:var(--bg-2);font-size:12.5px;max-width:280px}
+.tg-sum{display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:13.5px}
+.tg-sum .tg-act{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.warnbox{margin:8px 0 12px;padding:10px 12px;border-radius:10px;border:1px solid color-mix(in srgb,var(--a1) 50%,transparent);background:color-mix(in srgb,var(--a1) 10%,transparent);font-size:12.5px}
+.imp-list{display:grid;gap:3px}
+.imp-row{display:grid;grid-template-columns:minmax(0,150px) 1fr 52px 58px;gap:4px 10px;align-items:center;padding:5px 7px;border-radius:8px;border:1px solid transparent;background:transparent;cursor:pointer;font-size:12.5px;text-align:left}
+.imp-row:hover{border-color:var(--line-2)} .imp-row.on{border-color:var(--a2);background:color-mix(in srgb,var(--a2) 8%,transparent)}
+.imp-row .imp-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.imp-row .imp-bar{height:9px;border-radius:5px;background:var(--bg-2);overflow:hidden} .imp-row .imp-bar i{display:block;height:100%;border-radius:5px}
+.imp-row .imp-v{text-align:right} .imp-row .imp-b{font-size:11px;font-weight:600}
+.imp-row small{grid-column:1/-1;font-size:10.5px;margin-top:-2px}
+.tree{display:grid;gap:2px;margin:6px 0 4px}
+.tnode{display:grid;grid-template-columns:minmax(0,1fr) 80px 140px 64px;gap:10px;align-items:center;padding:6px 8px 6px calc(10px + var(--d) * 22px);border-radius:8px;font-size:12.5px;position:relative}
+.tnode::before{content:"";position:absolute;left:calc(var(--d) * 22px - 6px);top:0;bottom:50%;width:10px;border-left:1.5px solid var(--line-2);border-bottom:1.5px solid var(--line-2);border-bottom-left-radius:6px;display:var(--show,block)}
+.tnode[style*="--d:0"]::before{display:none}
+.tnode.leaf{background:color-mix(in srgb,var(--bg-2) 70%,transparent)}
+.tnode .trule{overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .tnode.leaf .trule{font-weight:600}
+.tnode .tn{text-align:right;color:var(--muted)} .tnode .tv{text-align:right;font-weight:600}
+.tnode .tbar{height:9px;border-radius:5px;background:var(--bg-2);overflow:hidden} .tnode .tbar i{display:block;height:100%;border-radius:5px}
+.cmp-n{display:flex;gap:18px;flex-wrap:wrap;font-size:13px}
+.cmp-n span{display:inline-flex;gap:8px;align-items:center;padding:6px 12px;border-radius:999px;border:1px solid color-mix(in srgb,var(--c) 45%,transparent);background:color-mix(in srgb,var(--c) 10%,transparent)}
+.cmp-hs{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.cmp-h{border:1px solid var(--line);border-radius:12px;padding:8px 10px;font-size:12px} .cmp-h svg{display:block;width:100%;height:auto}
+.qual-card .q-issue{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start;padding:10px 0;border-top:1px solid var(--line)}
+.q-issue .q-lv{font:600 10.5px/1 var(--f-body);letter-spacing:.08em;text-transform:uppercase;padding:5px 8px;border-radius:6px;color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);white-space:nowrap}
+.q-issue b{font-size:13.5px} .q-issue p{margin:3px 0 0;color:var(--muted);font-size:12.5px}
+.q-issue .q-act{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.ty-sel{font:600 10.5px/1 var(--f-body);letter-spacing:.06em;text-transform:uppercase;padding:4px 6px;border-radius:6px;border:1px solid var(--line-2);background:var(--bg-2);color:var(--a2);margin-left:6px}
+.ty-sel.l{color:var(--a1)}
+.bdg.info{color:var(--a2);background:color-mix(in srgb,var(--a2) 12%,transparent)}
+@media (max-width:760px){.tnode{grid-template-columns:minmax(0,1fr) 60px 60px;padding-left:calc(8px + var(--d) * 12px)} .tnode .tbar{display:none} .qual-card .q-issue{grid-template-columns:1fr} .imp-row{grid-template-columns:minmax(0,1fr) 70px 52px}.imp-row .imp-b{display:none}}
+

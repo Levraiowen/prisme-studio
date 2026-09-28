@@ -64,6 +64,17 @@ check("rapports de corrélation η² des qualitatives", np.abs(np.array(a["eta2"
 GA = np.array([[FA[[r[j] == cc for r in ansA], k].mean() for k in range(4)] for j, cc in zip(a["modCol"], a["modName"])])
 check("modalités au barycentre de leurs individus", same_up_to_sign(a["G"], GA), 1e-9)
 
+print("\nMode supervisé et comparaison de groupes")
+from sklearn.metrics import roc_auc_score
+su = R["sup"]; xs = np.array(su["x"]); ys = np.array(su["y"]); cs = np.array(su["c"])
+check("AUC de Mann-Whitney (scikit-learn)", abs(su["auc"] - roc_auc_score(ys, xs)), 1e-12)
+tt = stats.ttest_ind(xs[ys == 1], xs[ys == 0], equal_var=False)
+check("test de Welch : statistique t (scipy)", abs(su["welchT"] - tt.statistic), 1e-9)
+check("test de Welch : p-valeur (scipy)", abs(su["welchP"] - tt.pvalue), 1e-9)
+tab = np.array([[((cs == k) & (ys == g)).sum() for k in sorted(set(cs))] for g in (1, 0)]); chi, pch, _, _ = stats.chi2_contingency(tab, correction=False)
+check("V de Cramér (scipy)", abs(su["V"] - np.sqrt(chi / tab.sum())), 1e-12)
+check("test du χ² de la comparaison (scipy)", abs(su["chiP"] - pch), 1e-12)
+
 print("\nAFC")
 N = np.array(R["afc"]["N"], float); chi2, pval, ddl, _ = stats.chi2_contingency(N, correction=False)
 check("χ² d'indépendance (scipy)", abs(R["afc"]["chi2"] - chi2) / chi2, 1e-12); check("p-valeur du χ²", abs(R["afc"]["pval"] - pval), 1e-12)

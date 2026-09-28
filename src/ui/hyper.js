@@ -5,6 +5,7 @@ function encOptions(r) {
   if (r.method !== "AFC") { if (r.groups) col.push(["groups", `Groupe · ${r.color}`]); else col.push(["groups", "Couleur par défaut"]); col.push(["hcpc", "Classes HCPC (automatique)"]); if (state.groups.length) col.push(["user", "Groupes créés"]); if (state.clusters && state.clusters.n === r.n) col.push(["clusters", `Classes k-means du Labo (k = ${state.clusters.k})`]); }
   else col.push(["groups", "Couleur par défaut"]);
   const E = state.emb?.res === r && state.trustFrom && state.emb[state.trustFrom]?.q; if (E && E.idx.length === mainN(r)) col.push(["trust", `Fiabilité locale · ${PROJ[state.trustFrom].l}`]);
+  if (state.target && r.method !== "AFC") col.push(["target", `Cible · ${state.target.col}`]);
   col.push(["cos2", "Qualité de représentation (cos²)"], ["ctr", "Contribution aux axes retenus"]);
   size.push(["ctr", "Contribution aux axes retenus"], ["cos2", "Qualité de représentation (cos²)"]);
   if (hasQ(r)) { col.push(["t2", "Atypicité (T² de Hotelling)"], ["q", "Écart au modèle (Q)"]); r.vars.forEach(v => { col.push([`var:${v}`, `Variable · ${v}`]); size.push([`var:${v}`, `Variable · ${v}`]); }); }
@@ -19,6 +20,7 @@ function encValues(r, key) {
   if (key === "t2" && hasQ(r)) return diagCache(r).T2;
   if (key === "q" && hasQ(r)) return diagCache(r).Q;
   if (key === "mass" && r.method === "AFC") return r.r.slice();
+  if (key === "target") { const Y = tgtY(r); return Y ? Y.y : null; }
   if (key === "trust") { const q = state.emb?.[state.trustFrom]?.q; if (!q) return null; const out = new Array(mainN(r)).fill(NaN); q.idx.forEach((i, k) => (out[i] = q.trust[k])); return out; }
   return null;
 }

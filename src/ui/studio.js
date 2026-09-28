@@ -55,24 +55,35 @@ function renderMini(r, m) {
 // substituts des objets du navigateur, places AVANT le noyau (qui lit matchMedia au chargement)
 const WORKER_HEAD = `const matchMedia = () => ({ matches: true }), document = { querySelector: () => null, documentElement: { dataset: {} } }, getComputedStyle = () => ({ getPropertyValue: () => "" }), window = self;\n`;
 const WORKER_MAIN = `
+// le tableau de travail est envoye une seule fois puis garde ici (cle tableId) : les calculs suivants ne le recopient plus
+const TABLES = new Map();
 self.onmessage = e => { const { id, task, payload } = e.data; try { let out;
-  if (task === "insights") { const { table, method, params, hcOpts } = payload, t0 = performance.now();
+  const tableOf = p => { if (p.table) { TABLES.clear(); TABLES.set(p.tableId, p.table); } const t = TABLES.get(p.tableId); if (!t) throw new Error("table-absente"); return t; };
+  if (task === "insights") { const table = tableOf(payload), { method, params, hcOpts } = payload, t0 = performance.now();
     const res = method === "ACP" ? runACP(table, params) : method === "ACM" ? runACM(table, params) : method === "AFDM" ? runAFDM(table, params) : runAFC(table, params);
     const hc = method !== "AFC" && res.n >= 6 ? hcpc(res, hcOpts) : null, sc = method === "ACP" || method === "AFDM" ? scagAll(res) : [], ins = buildInsights(res, table, hc, sc);
     out = { ins, hc, scag: sc, ms: performance.now() - t0 }; }
+  if (task === "quality") out = qualityReport(tableOf(payload), payload.types);
+  if (task === "target") out = targetRun(tableOf(payload), payload);
   self.postMessage({ id, ok: true, out }); } catch (err) { self.postMessage({ id, ok: false, err: String((err && err.message) || err) }); } };`;
 const Compute = {
-  w: null, seq: 0, pending: new Map(),
+  w: null, seq: 0, pending: new Map(), sent: null, tableSeq: 0,
   worker() {
     if (this.w === false || typeof CORE_SRC === "undefined") return null;
     if (!this.w) try {
-      this.w = new Worker(URL.createObjectURL(new Blob([WORKER_HEAD, CORE_SRC, WORKER_MAIN], { type: "text/javascript" })));
+      this.w = new Worker(URL.createObjectURL(new Blob([WORKER_HEAD, CORE_SRC, WORKER_MAIN], { type: "text/javascript" }))); this.sent = null;
       this.w.onmessage = e => { const { id, ok, out, err } = e.data, p = this.pending.get(id); this.pending.delete(id); if (p) ok ? p.resolve(out) : p.reject(new Error(err)); };
       this.w.onerror = () => { this.pending.forEach(p => p.reject(new Error("worker indisponible"))); this.pending.clear(); this.w = false; };
     } catch (e) { this.w = false; return null; }
     return this.w;
   },
   run(task, payload) { const w = this.worker(); if (!w) return null; const id = ++this.seq; return new Promise((resolve, reject) => { this.pending.set(id, { resolve, reject }); w.postMessage({ id, task, payload }); }); },
+  // tache portant sur un tableau : envoye seulement s'il a change depuis le dernier envoi (reenvoye si le fil l'a perdu)
+  async onTable(task, table, payload) {
+    if (!this.worker()) return null; const fresh = this.sent !== table; if (fresh) { this.sent = table; this.tableSeq++; }
+    try { return await this.run(task, { ...payload, tableId: this.tableSeq, table: fresh ? table : undefined }); }
+    catch (e) { if (e.message !== "table-absente") throw e; this.sent = table; return this.run(task, { ...payload, tableId: this.tableSeq, table }); }
+  },
 };
 function setBusy(label) { const b = $("#busyPill"); if (!b) return; b.hidden = !label; if (label) b.querySelector("span").textContent = label; }
 
@@ -87,7 +98,7 @@ const Studio = {
   },
   computeInsights() {
     const r = state.res; if (!r || (state.insights && state.insights.res === r) || Studio._busy === r) return; Studio._busy = r; setBusy("analyse automatique en cours");
-    const key = JSON.stringify(state.hcOpts), t0 = performance.now(), job = Compute.run("insights", { table: state.work, method: state.method, params: state.params, hcOpts: state.hcOpts });
+    const key = JSON.stringify(state.hcOpts), t0 = performance.now(), job = Compute.worker() ? Compute.onTable("insights", state.work, { method: state.method, params: state.params, hcOpts: state.hcOpts }) : null;
     const local = () => setTimeout(() => { if (state.res !== r) return (Studio._busy = null); let hc = null, sc = [];
       try { hc = Studio.ensureHC(r); sc = Studio.ensureScag(r); Studio.finishInsights(r, buildInsights(r, state.work, hc, sc), performance.now() - t0, sc, hc); }
       catch (e) { console.error(e); state.insights = { res: r, list: [], ms: 0, nStat: 0, err: e.message }; Studio._busy = null; setBusy(null); } }, 30);
@@ -298,10 +309,10 @@ function roleOf(c) {
   if ((p.vars || []).includes(c)) return "active"; if (state.supp.quanti.includes(c) || state.supp.quali.includes(c)) return "illus"; if (p.color === c) return "color"; return "none";
 }
 function pProfil(r) {
-  const t = state.table, ty = state.types, N = t.rows.length, cols = t.columns, cells = N * cols.length, miss = cols.reduce((s, c) => s + (N - colInfo(t.rows, c).nonNull), 0), keyCols = cols.filter(c => c !== ty.ident);
-  // doublons : empreinte numerique de 53 bits par ligne (pas de longues chaines en memoire)
-  const hv = v => { const t = v === null || v === undefined ? "\u0000" : typeof v === "number" ? String(v) : "s" + v; let a = 0x811c9dc5, b = 0x9747b28c; for (let i = 0; i < t.length; i++) { const c = t.charCodeAt(i); a = Math.imul(a ^ c, 16777619); b = Math.imul(b ^ c, 0x5bd1e995); } return [a >>> 0, b >>> 0]; };
-  const dup = N - new Set(t.rows.map(x => { let a = 17, b = 31; for (const c of keyCols) { const [u, w] = hv(x[c]); a = Math.imul(a ^ u, 0x01000193) >>> 0; b = Math.imul(b ^ w, 0x85ebca6b) >>> 0; } return a * 2097152 + (b & 0x1fffff); })).size, quality = Math.round(100 - clamp(miss / cells * 300, 0, 40) - clamp(dup / N * 200, 0, 30));
+  const t = state.table, ty = state.types, N = t.rows.length, cols = t.columns, cells = N * cols.length, miss = cols.reduce((s, c) => s + (N - colInfo(t.rows, c).nonNull), 0);
+  // qualite : rapport calcule en arriere-plan (doublons, identifiants repetes, types, dates), affiche des qu'il est pret
+  const Q = qualityOf(), quality = Q ? Q.score : null, dup = Q ? Q.dupRows : null; if (!ty.dates) ty.dates = dateColumns(t);
+  const qualRing = quality === null ? '<text x="40" y="46" text-anchor="middle" font-size="16" style="fill:var(--muted)">…</text>' : `<circle cx="40" cy="40" r="32" fill="none" style="stroke:${quality >= 85 ? "var(--ok)" : quality >= 65 ? "var(--amber)" : "var(--a1)"}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(2 * Math.PI * 32 * quality / 100).toFixed(1)} 400" transform="rotate(-90 40 40)"/><text x="40" y="46" text-anchor="middle" font-size="20" font-weight="600" style="fill:var(--text)">${quality}</text>`;
   const m = state.method, info = state.impInfo;
   const cards = cols.map(c => {
     const isQ = ty.quanti.includes(c), raw = t.rows.map(x => x[c]), role = roleOf(c), tr = state.prep.tr[c] || "none"; let viz = "", stats = "", badges = [];
@@ -311,16 +322,17 @@ function pProfil(r) {
     else { const f = {}; raw.forEach(v => { if (v !== null && v !== undefined) f[v] = (f[v] || 0) + 1; }); const top = Object.entries(f).sort((a, b) => b[1] - a[1]), k = top.length; stats = `<span><b>${k}</b> modalités</span>${c === ty.ident ? "<span>identifiant</span>" : ""}`;
       if (c !== ty.ident) viz = miniBars(top.slice(0, 8).map(([l, v], i) => ({ l: String(l).slice(0, 8), v, c: `var(--g${i % 10 + 1})` })), 240, 86); if (k > 15 && c !== ty.ident) badges.push(["beaucoup de modalités", "amber"]); if (c !== ty.ident && top.some(([, v]) => v / N < 0.05)) badges.push(["modalités rares", "faint"]); }
     const roles = c === ty.ident ? [["ident", "Identifiant"]] : m === "AFC" ? [[role, "—"]] : isQ ? (m === "ACP" || m === "AFDM" ? [["active", "Active"], ["illus", "Illustrative"], ["none", "Ignorée"]] : [["illus", "Illustrative"], ["none", "Ignorée"]]) : m === "AFDM" ? [["active", "Active"], ["color", "Couleur des points"], ["illus", "Illustrative"], ["none", "Ignorée"]] : (m === "ACM" ? [["active", "Active"], ["illus", "Illustrative"], ["none", "Ignorée"]] : [["color", "Couleur des points"], ["illus", "Illustrative"], ["none", "Ignorée"]]);
-    return `<div class="card prof-card role-${role}"><header><div><b title="${esc(c)}">${esc(c)}</b><span class="ty ${isQ ? "q" : "l"}">${isQ ? "quantitative" : "qualitative"}</span></div>
+    return `<div class="card prof-card role-${role}"><header><div><b title="${esc(c)}">${esc(c)}</b>${typeSel(c, isQ)}</div>
       <select data-role="${esc(c)}" ${roles.length < 2 ? "disabled" : ""} aria-label="Rôle de ${esc(c)}">${roles.map(([v, l]) => `<option value="${v}" ${v === role ? "selected" : ""}>${l}</option>`).join("")}</select></header>
-      <div class="prof-viz">${viz}</div><div class="prof-stats">${stats}</div><div class="prof-badges">${badges.map(([l, k]) => `<span class="bdg ${k}">${esc(l)}</span>`).join("")}</div>
+      <div class="prof-viz">${viz}</div><div class="prof-stats">${stats}</div><div class="prof-badges">${badges.map(([l, k]) => `<span class="bdg ${k}">${esc(l)}</span>`).join("")}${ty.dates.includes(c) ? `<span class="bdg info">date</span><button class="btn sm" type="button" data-derive="${esc(c)}" title="Ajoute année, mois écoulés, trimestre, mois, jour de la semaine et ancienneté en jours">Créer les variables de date</button>` : ""}</div>
       ${isQ && (m === "ACP" || m === "AFDM") ? `<label class="prof-tr">Transformation <select data-tr="${esc(c)}">${Object.entries(TRANSFORMS).map(([k, T]) => `<option value="${k}" ${k === tr ? "selected" : ""}>${T.l}</option>`).join("")}</select></label>` : ""}</div>`;
   }).join("");
-  return `<div class="grid2"><div class="card wide prof-head"><div class="qual"><svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="32" fill="none" style="stroke:var(--line-2)" stroke-width="7"/><circle cx="40" cy="40" r="32" fill="none" style="stroke:${quality >= 85 ? "var(--ok)" : quality >= 65 ? "var(--amber)" : "var(--a1)"}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(2 * Math.PI * 32 * quality / 100).toFixed(1)} 400" transform="rotate(-90 40 40)"/><text x="40" y="46" text-anchor="middle" font-size="20" font-weight="600" style="fill:var(--text)">${quality}</text></svg><span>qualité</span></div>
-      <div class="prof-sum"><h3 class="panel-title">Profil des données</h3><p class="panel-sub" style="margin:0">${esc(state.source)} · <b>${N}</b> lignes × <b>${cols.length}</b> colonnes · ${ty.quanti.length} quantitatives, ${ty.quali.length} qualitatives · ${pc(miss / cells * 100, 1)} de cases vides · ${dup} doublon${dup > 1 ? "s" : ""}.
+  return `<div class="grid2"><div class="card wide prof-head"><div class="qual"><svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="32" fill="none" style="stroke:var(--line-2)" stroke-width="7"/>${qualRing}</svg><span>qualité</span></div>
+      <div class="prof-sum"><h3 class="panel-title">Profil des données</h3><p class="panel-sub" style="margin:0">${esc(state.source)} · <b>${N}</b> lignes × <b>${cols.length}</b> colonnes · ${ty.quanti.length} quantitatives, ${ty.quali.length} qualitatives · ${pc(miss / cells * 100, 1)} de cases vides · ${dup === null ? "doublons : analyse en cours" : `${dup.toLocaleString("fr-FR")} doublon${dup > 1 ? "s" : ""}`}.
         Définissez ici le rôle de chaque colonne : <b>active</b> (construit les axes), <b>illustrative</b> (projetée après coup, sans influencer), <b>ignorée</b>.</p></div>
       <div class="prof-miss"><label>Valeurs manquantes <select id="missSel">${(m === "ACM" ? [["drop", "Exclure les lignes"], ["modal", "Modalité « Manquant »"]] : [["drop", "Exclure les lignes"], ["mean", "Imputer par la moyenne"], ["pca", "Imputer par ACP itérative"]]).map(([v, l]) => `<option value="${v}" ${state.prep.missing === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
         <small>${info ? `${info.miss} valeurs imputées (${esc(info.method)}${info.iter ? `, ${info.iter} itérations` : ""})` : r.removed ? `${pl(r.removed, "ligne exclue", "lignes exclues")} de l'analyse` : "Aucune valeur manquante dans les variables actives"}</small></div></div>
+    ${qualityCard(Q)}
     <div class="prof-grid wide">${cards}</div></div>`;
 }
 function bindStudio() {

@@ -3,7 +3,7 @@
 //   node --max-old-space-size=8192 tests/bench_big.mjs 5000000 20     banc de charge : fichier genere de 5 M lignes x 20 variables
 import fs from "node:fs"; import path from "node:path"; import os from "node:os"; import { fileURLToPath, pathToFileURL } from "node:url";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const CORE = ["engine.js", "datasets.js", "explore.js", "stats.js", "prep.js", "cluster.js", "embed.js", "scag.js", "insights.js", "big.js"];
+const CORE = JSON.parse(fs.readFileSync(path.join(root, "src/core/order.json"), "utf8"));
 const N = +(process.argv[2] || 0), P = +(process.argv[3] || 20);
 const stubs = `const matchMedia = () => ({ matches: true }), document = { querySelector: () => null, documentElement: { dataset: {} } }, getComputedStyle = () => ({ getPropertyValue: () => "" }), window = {};
 const Papa = { parse: t => ({ data: t.trim().split(/\\r?\\n/).map(l => l.split(",")) }) };\n`;

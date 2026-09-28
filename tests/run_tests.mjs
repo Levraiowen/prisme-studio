@@ -2,12 +2,12 @@
 // Les fichiers du noyau sont charges dans un contexte isole avec des bouchons minimaux pour le navigateur.
 import fs from "node:fs"; import vm from "node:vm"; import path from "node:path"; import { fileURLToPath } from "node:url";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const CORE = ["engine.js", "datasets.js", "explore.js", "stats.js", "prep.js", "cluster.js", "embed.js", "scag.js", "insights.js"];
+const CORE = JSON.parse(fs.readFileSync(path.join(root, "src/core/order.json"), "utf8"));
 const ctx = { console, performance, Math, setTimeout, Promise, URL, Blob: class {}, Worker: undefined,
   matchMedia: () => ({ matches: true }), document: { querySelector: () => null, documentElement: { dataset: {} } }, getComputedStyle: () => ({ getPropertyValue: () => "" }),
   Papa: { parse: t => ({ data: t.trim().split(/\r?\n/).map(l => l.split(",")) }) }, window: {} };
 vm.createContext(ctx);
-const code = CORE.map(f => fs.readFileSync(path.join(root, "src/core", f), "utf8")).join("\n") + "\n;globalThis.__api = { EXEMPLES, parseCSV, detect, runACP, runACM, runAFC, runAFDM, suggest, interpret, eigSym, chi2sf, betai, betaInv, chi2Inv, normCdf, normInv, normSf, hyperTail, vtestQuanti, vtestModal, describeSubset, describe, histogram, pearson, spearman, dcor, anova, cramerV, imputePCA, applyTransforms, supplementary, ward, cutTree, leafOrder, hcpc, kmeansW, TSNE, neighborhoodQuality, scagnostics, mstEdges, shepard, diagTQ, reconstruct, inertiaFlows, projInertia, pcaFrame, mulberry, gauss, range, sum, mean, partialCorr, mainCloud, buildInsights, scagAll, applyMissing };";
+const code = CORE.map(f => fs.readFileSync(path.join(root, "src/core", f), "utf8")).join("\n") + "\n;globalThis.__api = { EXEMPLES, parseCSV, detect, runACP, runACM, runAFC, runAFDM, suggest, interpret, parseDate, dateColumns, deriveDate, timeAggregate, rowKeys, qualityReport, retype, compareGroups, targetSpec, targetImportance, cartFit, targetRun, IV_LABEL, colInfo, eigSym, chi2sf, betai, betaInv, chi2Inv, normCdf, normInv, normSf, hyperTail, vtestQuanti, vtestModal, describeSubset, describe, histogram, pearson, spearman, dcor, anova, cramerV, imputePCA, applyTransforms, supplementary, ward, cutTree, leafOrder, hcpc, kmeansW, TSNE, neighborhoodQuality, scagnostics, mstEdges, shepard, diagTQ, reconstruct, inertiaFlows, projInertia, pcaFrame, mulberry, gauss, range, sum, mean, partialCorr, mainCloud, buildInsights, scagAll, applyMissing };";
 vm.runInContext(code.replace(/^"use strict";/, ""), ctx);
 const A = ctx.__api; let pass = 0, fail = 0;
 const ok = (name, cond, info = "") => { if (cond) { pass++; console.log("  ✓ " + name); } else { fail++; console.log("  ✗ " + name + (info ? "  → " + info : "")); } };
@@ -114,5 +114,35 @@ ok("AFDM : chaque liaison r² ou η² dans [0, 1]", fd.link.every(l => l.r2.ever
 ok("AFDM : variance des coordonnées = λ", A.range(3).every(s => Math.abs(A.sum(fd.F.map(f => f[s] ** 2)) / fd.n - fd.vals[s]) < 1e-9));
 const hcM = A.hcpc(fd), insM = A.buildInsights(fd, imM.table, hcM, A.scagAll(fd)); ok("AFDM : HCPC et insights", hcM.k >= 2 && insM.length >= 5, `k=${hcM.k}, ${insM.length} insights`);
 ok("AFDM proposée pour des données mixtes équilibrées, ACP gardée si les quantitatives dominent", A.suggest(ec, tyE)[0] === "ACP" && A.suggest(ec, { ...tyE, quanti: tyE.quanti.slice(0, 5) })[0] === "AFDM", A.suggest(ec, tyE)[0]);
+
+console.log("\nDonnées : dates, qualité, types");
+ok("dates : ISO, jj/mm/aaaa, aaaa/mm/jj, aaaa-mm reconnues ; 31/02 refusée", [["2024-03-15", Date.UTC(2024, 2, 15)], ["15/03/2024", Date.UTC(2024, 2, 15)], ["2024/03/15", Date.UTC(2024, 2, 15)], ["2024-03", Date.UTC(2024, 2, 1)], ["2024-03-15T10:30", Date.UTC(2024, 2, 15, 10, 30)]].every(([v, t]) => A.parseDate(v) === t) && Number.isNaN(A.parseDate("31/02/2024")) && Number.isNaN(A.parseDate("bonjour")));
+{ const R0 = A.mulberry(21), rows = A.range(3000).map(i => ({ id: "L" + (i % 2990), x: Math.round(R0() * 50), y: R0() < 0.5 ? 1 : 2, d: `2021-${String(1 + (i % 12)).padStart(2, "0")}-15`, m: i % 7 === 0 ? "n/a?" : String(i % 13) }));
+  rows.push({ ...rows[10] }, { ...rows[20] }, { ...rows[20] });
+  const tq = { name: "q", columns: ["id", "x", "y", "d", "m"], rows, numeric: new Set(["x", "y"]) }, tyq = A.detect(tq), rep = A.qualityReport(tq, tyq);
+  ok("qualité : 3 lignes en double exactes (nombres entiers compris)", rep.dupRows === 3, rep.dupRows);
+  ok("qualité : identifiant répété détecté", rep.idDups.some(o => o.col === "id"), rep.idDups.map(o => o.col).join());
+  ok("qualité : colonne de dates détectée", A.dateColumns(tq).includes("d"));
+  ok("qualité : nombres mêlés de texte signalés", rep.issues.some(o => o.title.includes("m : nombres mêlés")));
+  const k1 = A.rowKeys(tq, ["x", "y"]), exact = new Set(rows.map(r => r.x + "|" + r.y)).size; ok("empreintes : autant de lignes distinctes que le comptage exact", new Set(k1).size === exact, `${new Set(k1).size} / ${exact}`);
+  const dv = A.deriveDate(tq, "d"); ok("variables de date : 6 colonnes, mois écoulés de 0 à 11", dv.added.length === 6 && Math.max(...rows.map(r => r["d · mois écoulés"])) === 11 && dv.table.numeric.has("d · année"));
+  const ag = A.timeAggregate(rows.map(r => A.parseDate(r.d)), "mois", [rows.map(r => r.x)]); ok("agrégation mensuelle : 12 périodes, effectifs complets", ag.keys.length === 12 && A.sum(ag.n) === rows.length);
+  const rt = A.retype(tq, "y", "quali"); ok("changement de type : y devient qualitative", !rt.table.numeric.has("y") && A.detect(rt.table).quali.includes("y")); }
+
+console.log("\nMode supervisé et comparaison de groupes");
+{ const R1 = A.mulberry(5), n = 4000, rows = A.range(n).map(() => { const x = A.gauss(R1), c = ["A", "B", "C"][Math.floor(R1() * 3)], z = A.gauss(R1), p = 1 / (1 + Math.exp(-(2.2 * x + (c === "A" ? 1.2 : 0) - 1.5))), yy = R1() < p ? 1 : 0; return { x, c, z, fuite: yy + 0.01 * A.gauss(R1), y: yy }; });
+  const t = { name: "s", columns: ["x", "c", "z", "fuite", "y"], rows, numeric: new Set(["x", "z", "fuite", "y"]) }, sp = A.targetSpec(rows, "y");
+  ok("cible 0/1 reconnue comme binaire", sp.kind === "bin");
+  const imp = A.targetImportance(t, rows, sp, ["x", "c", "z", "fuite"]), g = c => imp.list.find(o => o.col === c);
+  ok("importance : fuite > x > c > z (valeur d'information)", imp.list.map(o => o.col).join() === "fuite,x,c,z", imp.list.map(o => o.col + " " + o.iv.toFixed(2)).join(", "));
+  ok("bruit « inutile », x « très fort » mais pas une fuite (AUC < 0,95)", A.IV_LABEL(g("z").iv) === "inutile" && g("x").auc < 0.95, `${g("x").iv.toFixed(2)} AUC ${g("x").auc.toFixed(3)}`);
+  ok("AUC de x > 0,8, de z proche de 0,5", g("x").auc > 0.8 && Math.abs(g("z").auc - 0.5) < 0.05, `${g("x").auc.toFixed(3)} ${g("z").auc.toFixed(3)}`);
+  const run = A.targetRun(t, { target: "y", cols: ["x", "c", "z", "fuite"], depth: 3 });
+  ok("arbre : seule la fuite est exclue, première coupure sur x", run.leak.join() === "fuite" && run.tree.root.split === "x", `${run.leak} / ${run.tree.root.split}`);
+  ok("arbre : AUC > 0,75, effectifs des feuilles = total", run.tree.auc > 0.75 && A.sum(run.tree.leaves.map(l => l.nAll)) === n, `AUC ${run.tree.auc.toFixed(3)}`);
+  const Aidx = A.range(n).filter(i => rows[i].y === 1), Bidx = A.range(n).filter(i => rows[i].y === 0), cmp = A.compareGroups(t, rows, Aidx, Bidx, { skip: ["y"] });
+  ok("comparaison : x nettement plus élevé chez les y = 1 (d > 0,8, p < 0,001)", cmp.num.find(o => o.col === "x").d > 0.8 && cmp.num.find(o => o.col === "x").p < 1e-3);
+  ok("comparaison : z sans différence (|d| < 0,1)", Math.abs(cmp.num.find(o => o.col === "z").d) < 0.1);
+  const rn = A.targetRun(t, { target: "x", cols: ["c", "z", "y"], depth: 2 }); ok("cible numérique : arbre de régression, R² dans [0, 1]", rn.spec.kind === "num" && rn.tree.r2 >= 0 && rn.tree.r2 <= 1, rn.tree.r2.toFixed(3)); }
 
 console.log(`\n${pass} réussis, ${fail} échoués\n`); process.exit(fail ? 1 : 0);

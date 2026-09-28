@@ -1,7 +1,7 @@
 // Exporte les resultats du moteur JavaScript pour la contre-verification Python (tests/crosscheck.py).
 import fs from "node:fs"; import path from "node:path"; import os from "node:os"; import { fileURLToPath, pathToFileURL } from "node:url";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const CORE = ["engine.js", "datasets.js", "explore.js", "stats.js", "prep.js", "cluster.js", "embed.js", "scag.js", "insights.js", "big.js"];
+const CORE = JSON.parse(fs.readFileSync(path.join(root, "src/core/order.json"), "utf8"));
 const stubs = `const matchMedia = () => ({ matches: true }), document = { querySelector: () => null, documentElement: { dataset: {} } }, getComputedStyle = () => ({ getPropertyValue: () => "" }), window = {};
 const Papa = { parse: t => ({ data: t.trim().split(/\\r?\\n/).map(l => l.split(",")) }) };\n`;
 const body = `
@@ -38,6 +38,11 @@ const sup = supplementary(acp, luxe, [], ["Famille"]); OUT.supp = { F: acp.F.map
 // imputation : point fixe de l'ACP iterative regularisee
 const holes = acp.X.map((r, i) => r.map((v, j) => ((i * 7 + j * 3) % 11 === 0 ? NaN : v))), imp = imputePCA(holes, 2);
 OUT.imp = { X: holes.map(r => r.map(v => (Number.isFinite(v) ? v : null))), Y: imp.X, S: 2 };
+// mode supervise et comparaison : AUC, test de Welch, V de Cramer
+{ const R2 = mulberry(77), rows = range(1500).map(() => { const x = gauss(R2), c = ["a", "b", "c", "d"][Math.floor(R2() * 4)], y = R2() < 1 / (1 + Math.exp(-(1.3 * x + (c === "a" ? 0.8 : 0)))) ? 1 : 0; return { x, c, y }; });
+  const t = { name: "s", columns: ["x", "c", "y"], rows, numeric: new Set(["x", "y"]) }, sp = targetSpec(rows, "y"), imp = targetImportance(t, rows, sp, ["x", "c"]);
+  const A = range(1500).filter(i => rows[i].y === 1), B = range(1500).filter(i => rows[i].y === 0), cmp = compareGroups(t, rows, A, B, { skip: ["y"] });
+  OUT.sup = { x: rows.map(r => r.x), c: rows.map(r => r.c), y: rows.map(r => r.y), auc: imp.list.find(o => o.col === "x").auc, welchT: cmp.num[0].t, welchP: cmp.num[0].p, V: cmp.cat[0].V, chiP: cmp.cat[0].p }; }
 process.stdout.write(JSON.stringify(OUT));
 `;
 const file = path.join(os.tmpdir(), "prisme_export_ref.mjs");
