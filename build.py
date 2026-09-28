@@ -142,6 +142,8 @@ self.addEventListener("fetch", e => {{
   Cache-Control: no-cache
 /sw.js
   Cache-Control: no-cache
+/manifest.webmanifest
+  Content-Type: application/manifest+json
 """, encoding="utf-8")
 (site / "robots.txt").write_text("User-agent: *\nAllow: /\n", encoding="utf-8")
 (site / "examples" / "embed.html").write_text(read("examples/embed.html").replace("../dist/Prisme-Studio.html", "../index.html"), encoding="utf-8")
