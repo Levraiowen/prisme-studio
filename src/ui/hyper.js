@@ -7,7 +7,7 @@ function encOptions(r) {
   const E = state.emb?.res === r && state.trustFrom && state.emb[state.trustFrom]?.q; if (E && E.idx.length === mainN(r)) col.push(["trust", `Fiabilité locale · ${PROJ[state.trustFrom].l}`]);
   col.push(["cos2", "Qualité de représentation (cos²)"], ["ctr", "Contribution aux axes retenus"]);
   size.push(["ctr", "Contribution aux axes retenus"], ["cos2", "Qualité de représentation (cos²)"]);
-  if (r.method === "ACP") { col.push(["t2", "Atypicité (T² de Hotelling)"], ["q", "Écart au modèle (Q)"]); r.vars.forEach(v => { col.push([`var:${v}`, `Variable · ${v}`]); size.push([`var:${v}`, `Variable · ${v}`]); }); }
+  if (hasQ(r)) { col.push(["t2", "Atypicité (T² de Hotelling)"], ["q", "Écart au modèle (Q)"]); r.vars.forEach(v => { col.push([`var:${v}`, `Variable · ${v}`]); size.push([`var:${v}`, `Variable · ${v}`]); }); }
   if (r.method === "AFC") { col.push(["mass", "Masse (poids de la ligne)"]); size.push(["mass", "Masse (poids de la ligne)"]); }
   return { col, size };
 }
@@ -16,8 +16,8 @@ function encValues(r, key) {
   const S = r.nAxes;
   if (key === "cos2") return (r.method === "AFC" ? r.rcos2 : r.cos2).map(c => sum(c.slice(0, S)));
   if (key === "ctr") return (r.method === "AFC" ? r.rctr : r.ctr).map(c => sum(c.slice(0, S)) / S);
-  if (key === "t2" && r.method === "ACP") return diagCache(r).T2;
-  if (key === "q" && r.method === "ACP") return diagCache(r).Q;
+  if (key === "t2" && hasQ(r)) return diagCache(r).T2;
+  if (key === "q" && hasQ(r)) return diagCache(r).Q;
   if (key === "mass" && r.method === "AFC") return r.r.slice();
   if (key === "trust") { const q = state.emb?.[state.trustFrom]?.q; if (!q) return null; const out = new Array(mainN(r)).fill(NaN); q.idx.forEach((i, k) => (out[i] = q.trust[k])); return out; }
   return null;
@@ -41,8 +41,8 @@ function renderEnc() {
   if (!o.col.some(x => x[0] === state.enc.color)) state.enc.color = "groups"; if (!o.size.some(x => x[0] === state.enc.size)) state.enc.size = "uniform";
   const sel = (id, list, cur) => `<select id="${id}">${list.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
   box.innerHTML = `<div class="field" style="margin-top:0"><label for="encColor">Couleur des points</label>${sel("encColor", o.col, state.enc.color)}</div><div class="field"><label for="encSize">Taille des points</label>${sel("encSize", o.size, state.enc.size)}</div>
-    ${r.method === "ACP" ? `<div class="field"><label for="calSel">Axe gradué (lecture directe)</label><select id="calSel"><option value="">Aucun</option>${r.vars.map(v => `<option value="${esc(v)}" ${state.calVar === v ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></div>` : ""}
-    <p class="hint">Trois axes en position, deux dimensions de plus en couleur et en taille${r.method === "ACP" ? ", et une variable lisible en unités réelles sur son axe gradué" : ""}.</p>`;
+    ${hasQ(r) ? `<div class="field"><label for="calSel">Axe gradué (lecture directe)</label><select id="calSel"><option value="">Aucun</option>${r.vars.map(v => `<option value="${esc(v)}" ${state.calVar === v ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></div>` : ""}
+    <p class="hint">Trois axes en position, deux dimensions de plus en couleur et en taille${hasQ(r) ? ", et une variable lisible en unités réelles sur son axe gradué" : ""}.</p>`;
 }
 function itemColors(r) {
   const enc = encodeFor(r), gi = groupIndex(r), n = r.method === "AFC" ? r.I : r.n;
@@ -51,7 +51,7 @@ function itemColors(r) {
 
 /* ------------------------------------------------------------------ graphiques de l'hyperespace */
 function pcModel(r) {
-  const acp = r.method === "ACP", cl = mainCloud(r), cols = acp ? varOrder(r) : range(Math.min(r.q, 7));
+  const acp = hasQ(r), cl = mainCloud(r), cols = acp ? varOrder(r) : range(Math.min(r.q, 7));
   const vals = cl.P.map((f, i) => cols.map(j => (acp ? r.X[i][j] : f[j])));
   const m = { acp, cols, names: acp ? cols.map(j => r.vars[j]) : cols.map(k => `Axe ${k + 1}`), vals, n: vals.length, labels: cl.names, kind: cl.kind,
     lo: cols.map((_, c) => minOf(vals.map(v => v[c]))), hi: cols.map((_, c) => maxOf(vals.map(v => v[c]))), w: 1000, h: 360, L: 72, R: 72, T: 48, B: 34 };
@@ -159,7 +159,7 @@ function svgGlyphs(r, colors) {
 /* ------------------------------------------------------------------ panneau Hyperespace */
 function pHyper(r) {
   const H = state.hyperUI; if (H.key !== r) Object.assign(H, { key: r, brush: {}, shepK: Math.min(r.nAxes, r.q), recK: Math.min(r.nAxes, r.q) });
-  const acp = r.method === "ACP", colors = itemColors(r), pm = pcModel(r); Hyper.pcm = pm; Hyper.colors = colors;
+  const acp = hasQ(r), colors = itemColors(r), pm = pcModel(r); Hyper.pcm = pm; Hyper.colors = colors;
   const S = Math.min(r.q, 3), out = 100 - r.cum[S - 1];
   const intro = `<div class="card wide hy-intro"><div><h3 class="panel-title">Hyperespace <span class="beyond">au-delà du cours</span></h3>
       <p class="panel-sub" style="margin:0">Le nuage vit en <b>${r.q} dimensions</b> ; la 3D n'en montre que ${S}, soit ${pc(r.cum[S - 1])} de l'inertie. Il reste <b>${pc(out)}</b> hors de l'écran : ces outils le rendent visible.</p></div>
@@ -168,7 +168,7 @@ function pHyper(r) {
   const pc_ = `<div class="card wide"><div class="rowhead"><div><h3 class="panel-title">Coordonnées parallèles <span class="beyond">au-delà du cours</span></h3><p class="panel-sub" style="margin:0">${acp ? "Une ligne par individu, un axe vertical par variable (dans l'ordre du cercle des corrélations : variables voisines = corrélées)." : "Une ligne par " + (r.method === "AFC" ? "ligne du tableau" : "individu") + ", un axe vertical par axe factoriel."} <b>Glissez verticalement sur un axe</b> pour filtrer : la sélection s'allume aussi dans la 3D.${pm.n > 800 ? ` <span class="lod-note">800 lignes tracées sur ${pm.n.toLocaleString("fr-FR")} ; le filtre s'applique à toutes.</span>` : ""}</p></div>
       <div class="pc-ctl"><span class="mono" id="pcCount"></span><button class="btn sm" type="button" data-hyact="pcReset">Effacer les filtres</button><button class="btn sm" type="button" data-hyact="pcView">Voir dans la 3D</button></div></div><div class="svgbox" id="pcBox">${svgParallel(pm, colors, H.brush)}</div></div>`;
   const sk = svgSankey(r), sankey = `<div class="card wide"><h3 class="panel-title">Flux d'inertie <span class="exact">identité exacte</span></h3>
-      <p class="panel-sub">${r.method === "ACP" ? "Chaque variable apporte 1 unité d'inertie (sa variance réduite) et la répartit entre les axes selon ses cos² ; chaque axe reçoit exactement sa valeur propre λ." : r.method === "ACM" ? "Chaque variable apporte (m − 1)/K d'inertie (m modalités) et la répartit entre les axes selon η²/K ; chaque axe reçoit exactement λ." : "Chaque ligne apporte son inertie (masse × distance² au centre) et la répartit entre les axes ; chaque axe reçoit exactement λ."} Les flux animés montrent où part l'information.</p>
+      <p class="panel-sub">${r.method === "AFDM" ? "Chaque variable apporte au plus 1 par axe : r² si elle est quantitative, η² si elle est qualitative ; chaque axe reçoit exactement sa valeur propre λ." : r.method === "ACP" ? "Chaque variable apporte 1 unité d'inertie (sa variance réduite) et la répartit entre les axes selon ses cos² ; chaque axe reçoit exactement sa valeur propre λ." : r.method === "ACM" ? "Chaque variable apporte (m − 1)/K d'inertie (m modalités) et la répartit entre les axes selon η²/K ; chaque axe reçoit exactement λ." : "Chaque ligne apporte son inertie (masse × distance² au centre) et la répartit entre les axes ; chaque axe reçoit exactement λ."} Les flux animés montrent où part l'information.</p>
       <div class="svgbox">${sk.svg}</div><p class="panel-sub mono" style="margin:8px 0 0">Σ des flux = ${fr(sk.tot, 4)} = Σλ = ${fr(sum(r.vals), 4)} <span style="color:var(--ok)">✓</span></p></div>`;
   const shK = H.shepK, sh = shepard(r, shK), kOpts = range(Math.min(r.q, 5)).map(k => k + 1).filter(k => k >= 1);
   const shep = `<div class="card ${acp && diagCache(r).ucQ ? "" : "wide"}"><h3 class="panel-title">Fidélité de la projection <span class="beyond">au-delà du cours</span></h3><p class="panel-sub">Chaque point est une paire ${r.method === "AFC" ? "de lignes" : "d'individus"} : distance réelle contre distance vue sur les premiers axes. Une projection ne peut que rapprocher les points : tout est sous la diagonale.</p>

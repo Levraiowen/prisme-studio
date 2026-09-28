@@ -724,3 +724,6 @@ body.bigmode main > .stage, body.bigmode main > .kpis, body.bigmode main > .tabs
 @keyframes indet{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}
 @media (max-width:1180px){.bg-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.bg-main{grid-template-columns:minmax(0,1fr)}.bg-side{position:static;max-height:none}}
 @media (max-width:640px){.bg-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.bg-vars{grid-template-columns:minmax(0,1fr)}.bg-head{align-items:flex-start}}
+/* AFDM : type de chaque variable dans les puces */
+.chip .ck{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:6px;vertical-align:1px;background:var(--a2)}
+.chip .ck.l{border-radius:50%;background:var(--a1)}

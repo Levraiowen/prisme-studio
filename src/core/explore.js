@@ -107,6 +107,7 @@ const sampleRows = (n, cap, seed = 5) => { if (n <= cap) return range(n); const 
 // flux d'inertie : chaque source (variable ou ligne) repartit son inertie entre les axes ; chaque axe recoit lambda
 function inertiaFlows(res) {
   if (res.method === "ACP") return { label: "Variables", src: res.vars.map((v, j) => ({ l: v, f: res.coord[j].map(c => c * c) })) };
+  if (res.method === "AFDM") return { label: "Variables", src: res.link.map(l => ({ l: l.v, f: l.r2 })) };   // lambda_s = somme des r^2 et des eta^2
   if (res.method === "ACM") return { label: "Variables", src: res.vars.map((v, j) => ({ l: v, f: res.eta2[j].map(e => e / res.K) })) };
   return { label: res.rowName, src: res.rowL.map((l, i) => ({ l, f: res.F[i].map(x => res.r[i] * x * x) })) };
 }

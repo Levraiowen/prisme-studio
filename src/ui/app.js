@@ -11,6 +11,7 @@ function syncViews(v = "3d") { document.querySelectorAll("#views button").forEac
 function defaultParams(m) {
   const t = state.table, ty = state.types;
   if (m === "ACP") return { ident: ty.ident, vars: ty.quanti.slice(), color: ty.quali.find(c => new Set(t.rows.map(r => r[c])).size <= 10) || null, nAxes: null };
+  if (m === "AFDM") { const card = c => new Set(t.rows.map(r => r[c]).filter(v => v !== null && v !== undefined)).size; return { ident: ty.ident, vars: ty.quanti.concat(ty.quali.filter(c => { const k = card(c); return k >= 2 && k <= 15; })), color: ty.quali.find(c => card(c) <= 10) || null, nAxes: null }; }
   if (m === "ACM") return { ident: ty.ident, vars: ty.quali.filter(c => { const k = new Set(t.rows.map(r => r[c]).filter(v => v !== null && v !== undefined)).size; return k >= 2 && k <= 15; }), color: null, nAxes: null };
   const tab = isContingency(t, ty); return { mode: tab ? "tableau" : "brut", ident: ty.ident, vars: ty.quanti.slice(), rowVar: ty.quali[0] || null, colVar: ty.quali[1] || null,
     rowName: tab ? (ty.ident || "Lignes") : ty.quali[0] || "Lignes", colName: tab ? "Colonnes" : ty.quali[1] || "Colonnes", nAxes: null };
@@ -26,8 +27,8 @@ function setMethod(m) { if (m === state.method) return; state.method = m; state.
 function run(mode = "morph") {
   state.error = null; const prevN = state.res?.n, prevM = state.res?.method;
   try {
-    const t0 = applyTransforms(state.table, state.method === "ACP" ? state.prep.tr : {}), mi = applyMissing(t0, state.prep.missing === "modal" ? "modal" : state.prep.missing, state.params, state.method); state.work = mi.table; state.impInfo = mi.info;
-    const t = state.work; state.res = state.method === "ACP" ? runACP(t, state.params) : state.method === "ACM" ? runACM(t, state.params) : runAFC(t, state.params);
+    const t0 = applyTransforms(state.table, state.method === "ACP" || state.method === "AFDM" ? state.prep.tr : {}), mi = applyMissing(t0, state.prep.missing === "modal" ? "modal" : state.prep.missing, state.params, state.method); state.work = mi.table; state.impInfo = mi.info;
+    const t = state.work; state.res = state.method === "ACP" ? runACP(t, state.params) : state.method === "ACM" ? runACM(t, state.params) : state.method === "AFDM" ? runAFDM(t, state.params) : runAFC(t, state.params);
     state.res.supp = supplementary(state.res, t, state.supp.quanti, state.supp.quali); state.inter = interpret(state.res);
   } catch (e) { state.error = e.message; }
   $("#errBox").hidden = !state.error; $("#errBox").textContent = state.error || "";
@@ -44,15 +45,15 @@ function run(mode = "morph") {
 /* ------------------------------------------------------------------ en-tete, indicateurs */
 function renderHeader() {
   const r = state.res; $("#dsName").textContent = state.example ? EXEMPLES[state.example].label : state.source;
-  $("#dsDim").innerHTML = `· ${r.method === "AFC" ? `${r.I} × ${r.J}` : `${r.n.toLocaleString("fr-FR")} × ${r.method === "ACP" ? r.p : r.K}`}${state.example ? ' <span class="tag">exemple</span>' : ""}`;
+  $("#dsDim").innerHTML = `· ${r.method === "AFC" ? `${r.I} × ${r.J}` : `${r.n.toLocaleString("fr-FR")} × ${r.method === "ACP" ? r.p : r.method === "AFDM" ? r.p + r.K : r.K}`}${state.example ? ' <span class="tag">exemple</span>' : ""}`;
   $("#engPill").innerHTML = `${r.method} · ${r.engine.alg} ${r.engine.mat} · <b>${fr(r.engine.ms, 2)} ms</b>`;
   const S = Math.min(r.q, 3); $("#stageEyebrow").textContent = `Espace factoriel · ${pl(S, "axe")} · ${r.method}`;
-  $("#stageTitle").textContent = r.method === "ACP" ? `${pc(r.cum[S - 1])} de l'information dans cet espace` : r.method === "ACM" ? `${r.M} modalités, ${r.n} individus projetés` : `${r.I} ${r.rowName.toLowerCase()} × ${r.J} ${r.colName.toLowerCase()} projetés`;
-  $("#encLegend").innerHTML = encLegendHTML(r) + (r.method === "ACP" && state.calVar && r.vars.includes(state.calVar) ? (() => { const j = r.vars.indexOf(state.calVar), q2 = sum(r.vcos2[j].slice(0, 3)); return `<span><b>Axe gradué</b>${esc(state.calVar)}<em>qualité de lecture ${fr(q2)}</em></span>`; })() : "");
+  $("#stageTitle").textContent = r.method === "ACP" ? `${pc(r.cum[S - 1])} de l'information dans cet espace` : r.method === "AFDM" ? `${pc(r.cum[S - 1])} de l'information · ${r.p} quantitatives et ${r.K} qualitatives` : r.method === "ACM" ? `${r.M} modalités, ${r.n} individus projetés` : `${r.I} ${r.rowName.toLowerCase()} × ${r.J} ${r.colName.toLowerCase()} projetés`;
+  $("#encLegend").innerHTML = encLegendHTML(r) + (hasQ(r) && state.calVar && r.vars.includes(state.calVar) ? (() => { const j = r.vars.indexOf(state.calVar), q2 = sum(r.vcos2[j].slice(0, 3)); return `<span><b>Axe gradué</b>${esc(state.calVar)}<em>qualité de lecture ${fr(q2)}</em></span>`; })() : "");
   const lod = Stage.lod; $("#axisLegend").innerHTML = range(S).map(k => `<span><i style="background:var(--a${k + 1})"></i>Axe ${k + 1} · ${pc(r.pct[k])}${axisName(k) ? " · " + esc(axisName(k)) : ""}</span>`).join("") +
     (lod && lod.shown < lod.total ? `<span class="lodchip" title="Tous les individus sont calculés ; un échantillon aléatoire est dessiné pour garder la 3D fluide.">affichage ${lod.shown.toLocaleString("fr-FR")} / ${lod.total.toLocaleString("fr-FR")} points</span>` : "");
   const gi = groupIndex(r);
-  const tg = [["names", "Noms", "N"], ...(r.method === "ACP" ? [["arrows", "Variables", ""], ["sphere", "Sphère", ""]] : []), ...(S >= 3 ? [["drops", "Projections", "P"]] : []), ...(gi && r.method !== "AFC" ? [["bary", "Barycentres", "B"]] : []), ["net", "Réseau", "M"], ["dens", "Densité", "D"], ...(r.method === "ACP" ? [["unc", "Incertitude", "U"]] : []), ["rotate", "Rotation", "R"]];
+  const tg = [["names", "Noms", "N"], ...(hasQ(r) ? [["arrows", "Variables", ""], ["sphere", "Sphère", ""]] : []), ...(S >= 3 ? [["drops", "Projections", "P"]] : []), ...(gi && r.method !== "AFC" ? [["bary", "Barycentres", "B"]] : []), ["net", "Réseau", "M"], ["dens", "Densité", "D"], ...(r.method === "ACP" ? [["unc", "Incertitude", "U"]] : []), ["rotate", "Rotation", "R"]];
   $("#toggles").innerHTML = tg.map(([k, l, key]) => `<button class="tog" type="button" data-k="${k}" aria-pressed="${Stage.show[k]}"><i></i>${l}${key ? ` <span class="kbd">${key}</span>` : ""}</button>`).join("");
   $("#views").querySelector('[data-v="23"]').hidden = r.q < 3; $("#views").querySelector('[data-v="13"]').hidden = r.q < 3;
   $("#views").querySelector('[data-v="hyper"]').hidden = !Stage.canHyper("tour"); $("#views").querySelector('[data-v="hyper"]').innerHTML = `R<sup>${r.q}</sup>`; document.querySelector('[data-tool="anat"]').hidden = !Stage.canHyper("anat");
@@ -64,7 +65,7 @@ function renderKPIs() {
   const k4 = r.method === "AFC" ? ["Liaison χ²", fr(r.chi2, 1), `${r.ddl} ddl · p ${r.pval < 0.001 ? "< 0,001" : "= " + fr(r.pval, 3)}`] : ["Individus", String(r.n), r.removed ? pl(r.removed, "ligne incomplète retirée", "lignes incomplètes retirées") : "toutes les lignes sont complètes"];
   box.innerHTML = `
     <div class="card kpi"><div class="l">Information conservée</div><div class="v" id="kv1">0</div><div class="s">sur les ${pl(S, "axe")} retenus</div><div class="bar"><i id="kbar" style="width:0%"></i></div></div>
-    <div class="card kpi"><div class="l">Axes retenus</div><div class="v">${S}<small>/ ${r.q}</small></div><div class="s">${r.method === "ACP" ? `Kaiser ${r.rule} · coude ${r.coude}` : r.method === "ACM" ? `λ > 1/K : ${r.rule} · coude ${r.coude}` : `λ > moyenne : ${r.rule} · coude ${r.coude}`}</div><div class="spec">${specW}</div></div>
+    <div class="card kpi"><div class="l">Axes retenus</div><div class="v">${S}<small>/ ${r.q}</small></div><div class="s">${r.method === "ACP" ? `Kaiser ${r.rule} · coude ${r.coude}` : r.method === "AFDM" ? `λ ≥ 1 (moyenne) : ${r.rule} · coude ${r.coude}` : r.method === "ACM" ? `λ > 1/K : ${r.rule} · coude ${r.coude}` : `λ > moyenne : ${r.rule} · coude ${r.coude}`}</div><div class="spec">${specW}</div></div>
     <div class="card kpi">${svgSpark(r.vals)}<div class="l">Premier axe · λ1</div><div class="v" id="kv3">0</div><div class="s">${pc(r.pct[0])} de l'inertie ${r.pct[0] >= 60 ? "· domine" : "· sans écraser"}</div></div>
     <div class="card kpi"><div class="l">${k4[0]}</div><div class="v">${k4[1]}</div><div class="s">${k4[2]}</div></div>`;
   countUp($("#kv1"), r.cum[S - 1], x => fr(x, 1) + " %"); countUp($("#kv3"), r.vals[0], x => fr(x, r.vals[0] >= 1 ? 2 : 3));
@@ -81,9 +82,9 @@ function renderRail() {
   const opt = (arr, cur, none) => (none ? `<option value="">${none}</option>` : "") + arr.map(c => `<option value="${esc(c)}" ${c === cur ? "selected" : ""}>${esc(c)}</option>`).join("");
   const axesSel = `<div class="field"><label for="fAxes">Axes à interpréter</label><select id="fAxes" data-p="nAxes">${[["", "Automatique (règle du cours)"], ["2", "2"], ["3", "3"], ["4", "4"], ["5", "5"]].map(([v, l]) => `<option value="${v}" ${String(p.nAxes ?? "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>`;
   let h = "";
-  if (state.method === "ACP" || state.method === "ACM") {
-    const pool = state.method === "ACP" ? ty.quanti : cols.filter(c => c !== p.ident);
-    h += `<div class="chips" id="varChips">${pool.map(c => `<button class="chip" type="button" data-var="${esc(c)}" aria-pressed="${p.vars.includes(c)}" title="${esc(c)}">${esc(c)}</button>`).join("") || '<span class="muted">Aucune variable compatible.</span>'}</div>`;
+  if (state.method === "ACP" || state.method === "ACM" || state.method === "AFDM") {
+    const pool = state.method === "ACP" ? ty.quanti : state.method === "AFDM" ? ty.quanti.concat(ty.quali) : cols.filter(c => c !== p.ident), mixed = state.method === "AFDM";
+    h += `<div class="chips" id="varChips">${pool.map(c => `<button class="chip" type="button" data-var="${esc(c)}" aria-pressed="${p.vars.includes(c)}" title="${esc(c)}${mixed ? (ty.quanti.includes(c) ? " · quantitative" : " · qualitative") : ""}">${mixed ? `<i class="ck ${ty.quanti.includes(c) ? "q" : "l"}"></i>` : ""}${esc(c)}</button>`).join("") || '<span class="muted">Aucune variable compatible.</span>'}</div>`;
     h += `<div class="field"><label for="fIdent">Noms des individus</label><select id="fIdent" data-p="ident">${opt(cols, p.ident, "Numéroter les lignes")}</select></div>`;
     h += `<div class="field"><label for="fColor">Couleur des points</label><select id="fColor" data-p="color">${opt(ty.quali, p.color, "Aucune")}</select></div>`;
   } else {
@@ -112,11 +113,12 @@ const heatRatio = (r, P) => svgHeat(r.ratio, r.rowL, r.colL, P, { rot: true, cel
 function pSynthese(r) {
   const b = brief(r, state.inter).map(([h, c]) => `<li style="--c:${c}">${h}</li>`).join("");
   let right = "";
-  if (r.method === "ACP") right = `<div class="card"><h3 class="panel-title">Corrélations</h3><p class="panel-sub">Bleu : les variables montent ensemble · orange : elles s'opposent.</p><div class="svgbox">${heatCorr(r, PAL_UI)}</div></div>`;
+  if (r.method === "AFDM") right = `<div class="card"><h3 class="panel-title">Carré des liaisons</h3><p class="panel-sub">Chaque variable, quantitative (r²) ou qualitative (η²), selon sa liaison avec les axes 1 et 2 : plus elle est loin de l'origine, plus elle structure le plan.</p><div class="svgbox" style="max-width:460px;margin:auto">${svgLinkMap(r, 0, 1, PAL_UI)}</div></div>`;
+  else if (r.method === "ACP") right = `<div class="card"><h3 class="panel-title">Corrélations</h3><p class="panel-sub">Bleu : les variables montent ensemble · orange : elles s'opposent.</p><div class="svgbox">${heatCorr(r, PAL_UI)}</div></div>`;
   else if (r.method === "AFC") right = `<div class="card"><h3 class="panel-title">Écarts à l'indépendance</h3><p class="panel-sub">Effectif observé ÷ attendu − 1 : bleu = association plus fréquente qu'au hasard.</p><div class="svgbox">${heatRatio(r, PAL_UI)}</div></div>`;
   else { const rares = r.mods.filter((m, j) => r.eff[j] / r.n < .05);
     right = `<div class="card"><h3 class="panel-title">Fréquence des modalités</h3><p class="panel-sub">${rares.length ? `Modalités rares (< 5 %) : ${esc(liste(rares))}. Elles peuvent tirer un axe à elles seules.` : "Aucune modalité rare : toutes dépassent 5 % des individus."}</p><div class="scroll" style="max-height:360px"><table class="tbl"><thead><tr><th>Modalité</th><th>Effectif</th><th>%</th></tr></thead><tbody>${r.mods.map((m, j) => `<tr><td>${esc(m)}</td><td>${r.eff[j]}</td><td>${fr(r.eff[j] / r.n * 100, 1)}</td></tr>`).join("")}</tbody></table></div></div>`; }
-  const axesTxt = r.method === "ACP" ? `Critère de Kaiser : <b>${pl(r.rule, "axe")}</b> (λ ≥ 1). Critère du coude : <b>${pl(r.coude, "axe")}</b>, la plus forte cassure après le premier axe se situant entre l'axe ${r.coude} et l'axe ${r.coude + 1}.${r.nAxes >= 3 && r.vals[r.nAxes - 1] < 1.15 ? ` λ${r.nAxes} = ${fr(r.vals[r.nAxes - 1])} reste proche du seuil : cet axe est le plus fragile.` : ""}`
+  const axesTxt = r.method === "AFDM" ? `Valeur propre moyenne = 1 : <b>${pl(r.rule, "axe")}</b> au-dessus ; coude : <b>${pl(r.coude, "axe")}</b>. Chaque variable apporte au plus 1 par axe (r² ou η²).` : r.method === "ACP" ? `Critère de Kaiser : <b>${pl(r.rule, "axe")}</b> (λ ≥ 1). Critère du coude : <b>${pl(r.coude, "axe")}</b>, la plus forte cassure après le premier axe se situant entre l'axe ${r.coude} et l'axe ${r.coude + 1}.${r.nAxes >= 3 && r.vals[r.nAxes - 1] < 1.15 ? ` λ${r.nAxes} = ${fr(r.vals[r.nAxes - 1])} reste proche du seuil : cet axe est le plus fragile.` : ""}`
     : r.method === "ACM" ? `Seuil 1/K = ${fr(r.threshold, 3)} : <b>${pl(r.rule, "axe")}</b> au-dessus de l'inertie moyenne ; coude : <b>${pl(r.coude, "axe")}</b>.` : `Inertie moyenne ${fr(r.threshold, 4)} : <b>${pl(r.rule, "axe")}</b> au-dessus ; coude : <b>${pl(r.coude, "axe")}</b>.`;
   return `<div class="grid2">
     <div class="card wide"><h3 class="panel-title">En bref</h3><p class="panel-sub">Généré automatiquement à partir des règles du cours · ${esc(state.example ? EXEMPLES[state.example].label : state.source)}</p><ul class="brief">${b}</ul></div>
@@ -128,7 +130,7 @@ function pSynthese(r) {
 function chipsHTML(list, cls, max = 10, total = list.length) { if (!list.length) return '<span class="muted" style="font-size:12.5px">—</span>'; const x = list.slice(0, max).map(e => `<span class="${cls}">${esc(typeof e === "string" ? e : `${e.l} · ${fr(e.c, 1)} %`)}</span>`).join(""); return x + (total > max ? `<span class="muted" style="font-size:12px;padding:5px 2px">+${(total - Math.min(max, list.length)).toLocaleString("fr-FR")}</span>` : ""); }
 function pAxes(r) {
   const seuil = seuilOf(r);
-  return `<div class="grid2">${state.inter.map(it => { const k = it.k, c = `var(--a${Math.min(k, 2) + 1})`, nm = axisName(k); const what = r.method === "ACP" ? "Variables" : r.method === "ACM" ? "Modalités" : esc(r.rowName);
+  return `<div class="grid2">${state.inter.map(it => { const k = it.k, c = `var(--a${Math.min(k, 2) + 1})`, nm = axisName(k); const what = r.method === "ACP" ? "Variables" : r.method === "AFDM" ? "Variables et modalités" : r.method === "ACM" ? "Modalités" : esc(r.rowName);
     return `<div class="card axis-card wide" style="--c:${c}">
       <div class="axis-head"><span class="num">AXE ${k + 1}</span><span class="pct">${pc(r.pct[k])}</span><span class="lam mono">λ = ${fr(r.vals[k], r.vals[k] >= .1 ? 3 : 4)}</span>
         <input type="text" id="axisName${k}" data-axis="${k}" value="${esc(nm)}" placeholder="Nommer l'axe · ex. ${esc(it.auto)}" aria-label="Nom de l'axe ${k + 1}"></div>
@@ -136,12 +138,17 @@ function pAxes(r) {
       <p class="panel-sub" style="margin:6px 0 0">Seuil de contribution : ${fr(seuil, 1)} % ${r.method === "AFC" ? "(colonnes ramenées au même seuil)" : ""} · le signe de la coordonnée donne le côté.</p>
       <div class="sides"><div class="side"><h4>${what} · côté −</h4><div class="chips">${chipsHTML(it.main.minus, "")}</div></div><div class="side"><h4>${what} · côté +</h4><div class="chips">${chipsHTML(it.main.plus, "plus")}</div></div></div>
       ${it.cols ? `<div class="sides"><div class="side"><h4>${esc(r.colName)} · côté −</h4><div class="chips">${chipsHTML(it.cols.minus, "")}</div></div><div class="side"><h4>${esc(r.colName)} · côté +</h4><div class="chips">${chipsHTML(it.cols.plus, "plus")}</div></div></div>` : ""}
-      ${r.method === "ACP" ? `<div class="sides"><div class="side"><h4>Individus · coord. < −${fr(Math.sqrt(r.vals[k]))}</h4><div class="chips">${chipsHTML(it.indM, "", 8, it.nM)}</div></div><div class="side"><h4>Individus · coord. > +${fr(Math.sqrt(r.vals[k]))}</h4><div class="chips">${chipsHTML(it.indP, "plus", 8, it.nP)}</div></div></div>` : ""}
+      ${hasQ(r) ? `<div class="sides"><div class="side"><h4>Individus · coord. < −${fr(Math.sqrt(r.vals[k]))}</h4><div class="chips">${chipsHTML(it.indM, "", 8, it.nM)}</div></div><div class="side"><h4>Individus · coord. > +${fr(Math.sqrt(r.vals[k]))}</h4><div class="chips">${chipsHTML(it.indP, "plus", 8, it.nP)}</div></div></div>` : ""}
       <p class="sentence">${axisPhrase(r, it)}</p></div>`; }).join("")}</div>`;
 }
 function planPicker(q) { const opts = [[0, 1], [0, 2], [1, 2]].filter(([a, b]) => b < q); return `<div class="planpick">${opts.map(([a, b]) => `<button type="button" data-plan="${a}${b}" aria-pressed="${state.plan[0] === a && state.plan[1] === b}">Plan ${a + 1}·${b + 1}</button>`).join("")}</div>`; }
 function pVariables(r) {
   const [a, b] = state.plan[1] < r.q ? state.plan : [0, 1], S = r.nAxes;
+  if (r.method === "AFDM") { const mp = planPoints(r, a, b, PAL_UI).pts;
+    return `<div class="grid2"><div class="card"><div class="rowhead"><div><h3 class="panel-title">Carré des liaisons</h3><p class="panel-sub" style="margin:0">r² (quantitatives) et η² (qualitatives) avec les deux axes du plan.</p></div>${planPicker(r.q)}</div><div class="svgbox" style="max-width:520px;margin:auto">${svgLinkMap(r, a, b, PAL_UI)}</div></div>
+      <div class="card"><h3 class="panel-title">Cercle des corrélations</h3><p class="panel-sub">Variables quantitatives seulement.</p><div class="svgbox" style="max-width:520px;margin:auto">${svgCircle(r, a, b, PAL_UI)}</div></div>
+      <div class="card wide"><h3 class="panel-title">Carte des modalités</h3><p class="panel-sub">Chaque modalité au barycentre des individus qui la portent (points gris).</p><div class="svgbox">${svgPlan(mp, a, b, r, PAL_UI)}</div></div>
+      <div class="card wide"><h3 class="panel-title">Liaison de chaque variable avec les axes</h3><p class="panel-sub">r² pour une quantitative, η² pour une qualitative ; leur somme sur un axe donne sa valeur propre.</p><div class="scroll"><table class="tbl"><thead><tr><th>Variable</th><th>Type</th>${range(S).map(k => `<th>Axe ${k + 1}</th>`).join("")}</tr></thead><tbody>${r.link.map(l => `<tr><td>${esc(l.v)}</td><td style="font-family:var(--f-body)">${l.type === "q" ? "quantitative · r²" : "qualitative · η²"}</td>${range(S).map(k => `<td style="${l.r2[k] >= .3 ? `color:var(--a${Math.min(k, 2) + 1});font-weight:600` : ""}">${fr(l.r2[k])}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div></div>`; }
   if (r.method === "ACP") return `<div class="grid2"><div class="card"><div class="rowhead"><div><h3 class="panel-title">Cercle des corrélations</h3><p class="panel-sub" style="margin:0">Couleur de flèche = axe sur lequel la variable est la mieux représentée.</p></div>${planPicker(r.q)}</div><div class="svgbox" style="max-width:520px;margin:auto">${svgCircle(r, a, b, PAL_UI)}</div></div>
       <div class="card"><h3 class="panel-title">Coordonnées, contributions, cos²</h3><p class="panel-sub">Contribution significative au-delà de ${fr(100 / r.p, 1)} % (1/p).</p><div class="scroll"><table class="tbl"><thead><tr><th>Variable</th>${range(S).map(k => `<th>F${k + 1}</th>`).join("")}${range(S).map(k => `<th>CTR ${k + 1}</th>`).join("")}<th>cos² ${S} axes</th></tr></thead><tbody>
       ${r.vars.map((v, j) => `<tr><td>${esc(v)}</td>${range(S).map(k => `<td>${frs(r.coord[j][k])}</td>`).join("")}${range(S).map(k => `<td style="${r.vctr[j][k] > 100 / r.p ? `color:var(--a${Math.min(k, 2) + 1});font-weight:600` : ""}">${fr(r.vctr[j][k], 1)}</td>`).join("")}<td>${fr(sum(r.vcos2[j].slice(0, S)))}</td></tr>`).join("")}</tbody></table></div></div></div>`;
@@ -154,16 +161,16 @@ function pVariables(r) {
 function pIndividus(r) {
   if (r.method === "AFC") return pVariables(r);
   const [a, b] = state.plan[1] < r.q ? state.plan : [0, 1], gi = groupIndex(r);
-  const indPts = r.method === "ACM" ? svgRows(r.n).map(i => ({ v: r.F[i], label: r.names[i], col: gi ? PAL_UI.g[gi.idx[i] % 10] : PAL_UI.a[1], r: r.n > 800 ? 2.2 : 3.5 })) : planPoints(r, a, b, PAL_UI).pts;
-  const arrows = r.method === "ACP" ? r.coord.map((c, j) => ({ v: c, label: r.vars[j], col: PAL_UI.a[dominantAxis(r.vcos2[j], r.nAxes)] })) : null;
+  const indPts = r.method === "AFDM" ? planPoints(r, a, b, PAL_UI, false).pts : r.method === "ACM" ? svgRows(r.n).map(i => ({ v: r.F[i], label: r.names[i], col: gi ? PAL_UI.g[gi.idx[i] % 10] : PAL_UI.a[1], r: r.n > 800 ? 2.2 : 3.5 })) : planPoints(r, a, b, PAL_UI).pts;
+  const arrows = hasQ(r) ? r.coord.map((c, j) => ({ v: c, label: r.vars[j], col: PAL_UI.a[dominantAxis(r.vcos2[j], r.nAxes)] })) : null;
   const S = r.nAxes, q = state.search.toLowerCase(); let rows = range(r.n).filter(i => r.names[i].toLowerCase().includes(q));
   if (state.sort) { const [key, dir] = state.sort; rows.sort((x, y) => dir * (key === "name" ? r.names[x].localeCompare(r.names[y], "fr") : key.startsWith("F") ? r.F[x][+key.slice(1)] - r.F[y][+key.slice(1)] : r.ctr[x][+key.slice(1)] - r.ctr[y][+key.slice(1)])); }
   // pagination : le tableau n'affiche que les premieres lignes (tri et recherche portent sur toutes)
   const totalRows = rows.length, limit = state.indLimit || 300; rows = rows.slice(0, limit);
-  return `<div class="grid2"><div class="card wide"><div class="rowhead"><div><h3 class="panel-title">${r.method === "ACP" ? "Représentation superposée" : "Carte des individus"}</h3><p class="panel-sub" style="margin:0">${r.method === "ACP" ? "Un individu placé dans la direction d'une flèche a une valeur élevée pour cette variable." : "Points colorés selon la variable choisie dans les réglages."}</p></div>${planPicker(r.q)}</div><div class="svgbox">${svgPlan(indPts, a, b, r, PAL_UI, { arrows })}</div></div>
+  return `<div class="grid2"><div class="card wide"><div class="rowhead"><div><h3 class="panel-title">${hasQ(r) ? "Représentation superposée" : "Carte des individus"}</h3><p class="panel-sub" style="margin:0">${hasQ(r) ? "Un individu placé dans la direction d'une flèche a une valeur élevée pour cette variable." : "Points colorés selon la variable choisie dans les réglages."}</p></div>${planPicker(r.q)}</div><div class="svgbox">${svgPlan(indPts, a, b, r, PAL_UI, { arrows })}</div></div>
     <div class="card wide"><div class="rowhead"><h3 class="panel-title">Tous les individus</h3><input class="search" id="searchInd" type="search" placeholder="Rechercher un individu" value="${esc(state.search)}" aria-label="Rechercher un individu"></div>
     <div class="scroll"><table class="tbl" id="indTable"><thead><tr><th data-sort="name">Individu</th>${gi ? `<th>${state.colorMode === "clusters" && state.clusters ? "Classe" : esc(r.color)}</th>` : ""}${range(S).map(k => `<th data-sort="F${k}">F${k + 1}</th>`).join("")}<th>cos² 1·2</th>${range(S).map(k => `<th data-sort="C${k}">CTR ${k + 1}</th>`).join("")}</tr></thead><tbody>
-    ${rows.map(i => `<tr data-ind="${i}" class="${state.sel.has(i) ? "insel" : ""}"><td>${esc(r.names[i])}</td>${gi ? `<td style="font-family:var(--f-body)">${esc(gi.cats[gi.idx[i]])}</td>` : ""}${range(S).map(k => `<td>${frs(r.F[i][k])}</td>`).join("")}<td>${fr(r.cos2[i][0] + (r.cos2[i][1] || 0))}</td>${range(S).map(k => `<td style="${r.method === "ACP" && r.ctr[i][k] > 100 / r.n ? `color:var(--a${Math.min(k, 2) + 1});font-weight:600` : ""}">${fr(r.ctr[i][k], 1)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    ${rows.map(i => `<tr data-ind="${i}" class="${state.sel.has(i) ? "insel" : ""}"><td>${esc(r.names[i])}</td>${gi ? `<td style="font-family:var(--f-body)">${esc(gi.cats[gi.idx[i]])}</td>` : ""}${range(S).map(k => `<td>${frs(r.F[i][k])}</td>`).join("")}<td>${fr(r.cos2[i][0] + (r.cos2[i][1] || 0))}</td>${range(S).map(k => `<td style="${hasQ(r) && r.ctr[i][k] > 100 / r.n ? `color:var(--a${Math.min(k, 2) + 1});font-weight:600` : ""}">${fr(r.ctr[i][k], 1)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
     ${totalRows > rows.length ? `<div class="more"><span class="mono muted">${rows.length.toLocaleString("fr-FR")} lignes affichées sur ${totalRows.toLocaleString("fr-FR")}</span><button class="btn sm" type="button" data-act="more">Afficher ${Math.min(300, totalRows - rows.length)} de plus</button></div>` : ""}</div></div>`;
 }
 
@@ -171,32 +178,35 @@ function pIndividus(r) {
 const Sim = {
   init(r) {
     if (state.sim && state.sim.method === r.method) return;
-    if (r.method === "ACP") state.sim = { method: "ACP", vals: r.mu.slice() };
+    const topMod = (j, vars) => { let best = -1; r.mods.forEach((m, i) => { if (r.modCol[i] === j && (best < 0 || r.eff[i] > r.eff[best])) best = i; }); return best; };
+    if (r.method === "AFDM") state.sim = { method: "AFDM", vals: r.mu.slice(), pick: r.qvars.map((v, j) => topMod(j)) };
+    else if (r.method === "ACP") state.sim = { method: "ACP", vals: r.mu.slice() };
     else if (r.method === "ACM") state.sim = { method: "ACM", pick: r.vars.map((v, j) => { let best = -1; r.mods.forEach((m, i) => { if (r.modCol[i] === j && (best < 0 || r.eff[i] > r.eff[best])) best = i; }); return best; }) };
     else state.sim = { method: "AFC", counts: r.colL.map((_, j) => Math.round(r.c[j] * r.n / r.I)) };
   },
-  input(r) { return r.method === "ACP" ? state.sim.vals : r.method === "ACM" ? state.sim.pick : state.sim.counts; },
+  input(r) { return r.method === "AFDM" ? { vals: state.sim.vals, pick: state.sim.pick } : r.method === "ACP" ? state.sim.vals : r.method === "ACM" ? state.sim.pick : state.sim.counts; },
   update() {
     const r = state.res; if (!state.sim) return; const pr = projectSupp(r, Sim.input(r)), nb = neighbors(r, pr.F, 3);
     Stage.setGhost(pr.F, Stage.idxOf(r.method === "AFC" ? "row" : "ind", nb.map(o => o.i)));
     const out = $("#simOut"); if (!out) return; const S = Math.min(r.q, 3);
     out.innerHTML = `<div class="coords">${range(S).map(k => { const f = pr.F[k], sq = Math.sqrt(r.vals[k]), side = Math.abs(f) > sq ? `nettement côté ${f > 0 ? "+" : "−"}` : Math.abs(f) > sq / 2 ? `plutôt côté ${f > 0 ? "+" : "−"}` : "proche du centre";
         return `<div style="--c:var(--a${k + 1})"><span>AXE ${k + 1}${axisName(k) ? " · " + esc(axisName(k)) : ""}</span><b class="mono">${frs(f)}</b><small>${side}</small></div>`; }).join("")}</div>
-      <p class="panel-sub" style="margin:12px 0 6px">${sum(pr.F.map(f => f * f)) < 1e-8 ? "Le point est exactement au centre de gravité : c'est le profil moyen, sa qualité de représentation (cos²) n'est pas définie. Bougez un curseur." : `Qualité sur le plan 1·2 : <b class="mono">cos² = ${fr(pr.cos2[0] + (pr.cos2[1] || 0))}</b>${r.method === "ACP" ? ` · sur ${pl(r.nAxes, "axe")} : <b class="mono">${fr(sum(pr.cos2.slice(0, r.nAxes)))}</b>` : ""}`}</p>
+      <p class="panel-sub" style="margin:12px 0 6px">${sum(pr.F.map(f => f * f)) < 1e-8 ? "Le point est exactement au centre de gravité : c'est le profil moyen, sa qualité de représentation (cos²) n'est pas définie. Bougez un curseur." : `Qualité sur le plan 1·2 : <b class="mono">cos² = ${fr(pr.cos2[0] + (pr.cos2[1] || 0))}</b>${hasQ(r) ? ` · sur ${pl(r.nAxes, "axe")} : <b class="mono">${fr(sum(pr.cos2.slice(0, r.nAxes)))}</b>` : ""}`}</p>
       <h3 class="panel-title" style="font-size:13px;margin-top:14px">Voisins les plus proches</h3>${nb.map(o => `<div class="nb" data-nb="${o.i}"><span>${esc(o.name)}</span><span>d = ${fr(o.d)}</span></div>`).join("")}
       <p class="panel-sub" style="margin-top:12px">Le point doré se déplace en direct dans l'espace 3D. Il est projeté sur les axes déjà calculés, sans les modifier : c'est un individu supplémentaire, au sens du cours.</p>`;
   },
 };
 function pSim(r) {
   Sim.init(r); let rows = "";
-  if (r.method === "ACP") rows = r.vars.map((v, j) => { const lo = r.min[j], hi = r.max[j], span = hi - lo || 1, st = span / 200, val = state.sim.vals[j];
-    return `<div class="sim-row"><label for="sim${j}" title="${esc(v)}">${esc(v)}</label><input type="range" id="sim${j}" data-sim="${j}" min="${lo - span * .15}" max="${hi + span * .15}" step="${st}" value="${val}"><output id="simv${j}">${fr(val, Math.abs(val) >= 100 ? 0 : 2)}</output></div>`; }).join("");
+  const selQ = (vars, off) => vars.map((v, j) => `<div class="sim-row"><label for="simq${j}">${esc(v)}</label><select id="simq${j}" data-simq="${j}">${r.mods.map((m, i) => r.modCol[i] === j ? `<option value="${i}" ${state.sim.pick[j] === i ? "selected" : ""}>${esc(r.modName[i])}</option>` : "").join("")}</select></div>`).join("");
+  if (hasQ(r)) rows = r.vars.map((v, j) => { const lo = r.min[j], hi = r.max[j], span = hi - lo || 1, st = span / 200, val = state.sim.vals[j];
+    return `<div class="sim-row"><label for="sim${j}" title="${esc(v)}">${esc(v)}</label><input type="range" id="sim${j}" data-sim="${j}" min="${lo - span * .15}" max="${hi + span * .15}" step="${st}" value="${val}"><output id="simv${j}">${fr(val, Math.abs(val) >= 100 ? 0 : 2)}</output></div>`; }).join("") + (r.method === "AFDM" ? selQ(r.qvars) : "");
   else if (r.method === "ACM") rows = r.vars.map((v, j) => `<div class="sim-row"><label for="sim${j}">${esc(v)}</label><select id="sim${j}" data-simq="${j}">${r.mods.map((m, i) => r.modCol[i] === j ? `<option value="${i}" ${state.sim.pick[j] === i ? "selected" : ""}>${esc(r.modName[i])}</option>` : "").join("")}</select></div>`).join("");
   else rows = r.colL.map((c, j) => { const mx = maxOf(r.N.map(row => row[j])) * 1.5; return `<div class="sim-row"><label for="sim${j}">${esc(c)}</label><input type="range" id="sim${j}" data-sim="${j}" min="0" max="${Math.ceil(mx)}" step="1" value="${state.sim.counts[j]}"><output id="simv${j}">${state.sim.counts[j]}</output></div>`; }).join("");
   const start = r.method === "AFC" ? "" : r.n <= 500 ? `<div class="field" style="margin-top:0"><label for="simFrom">Partir d'un individu existant</label><select id="simFrom"><option value="">—</option>${r.names.map((nm, i) => `<option value="${i}">${esc(nm)}</option>`).join("")}</select></div>`
     : `<div class="field" style="margin-top:0"><label for="simFromName">Partir d'un individu existant (nom exact, puis Entrée)</label><input id="simFromName" placeholder="ex. ${esc(r.names[0])}" autocomplete="off"></div>`;
   return `<div class="sim"><div class="card"><h3 class="panel-title">${r.method === "AFC" ? "Nouvelle ligne à projeter" : "Nouvel individu à projeter"} <span class="beyond">en direct</span></h3>
-      <p class="panel-sub">${r.method === "ACP" ? "Réglez les valeurs : le point se place aussitôt dans l'espace factoriel." : r.method === "ACM" ? "Choisissez une modalité par variable : le point se place au barycentre de ses modalités." : "Réglez les effectifs par colonne : la ligne se place selon son profil."}</p>
+      <p class="panel-sub">${r.method === "AFDM" ? "Réglez les valeurs et choisissez les modalités : le point se place aussitôt dans l'espace factoriel." : r.method === "ACP" ? "Réglez les valeurs : le point se place aussitôt dans l'espace factoriel." : r.method === "ACM" ? "Choisissez une modalité par variable : le point se place au barycentre de ses modalités." : "Réglez les effectifs par colonne : la ligne se place selon son profil."}</p>
       ${start}<div style="margin-top:8px">${rows}</div><div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn sm" type="button" data-act="simReset">Réinitialiser</button><button class="btn sm" type="button" data-act="simView">Voir dans la 3D</button></div></div>
     <div class="card"><h3 class="panel-title">Position sur les axes</h3><p class="panel-sub">Mise à jour à chaque réglage.</p><div id="simOut"></div></div></div>`;
 }
@@ -235,7 +245,7 @@ function pLabo(r) {
   if (r.method !== "AFC" && L.sil) {
     const sel = L.sil.find(s => s.k === L.k), lab = sel.km.labels, K = L.k, on = state.colorMode === "clusters" && state.clusters?.k === K;
     let prof = "";
-    if (r.method === "ACP") { const acc = range(K).map(() => new Float64Array(r.p)), cnt = new Array(K).fill(0); for (let i = 0; i < r.n; i++) { const c = lab[i], x = r.X[i], a = acc[c]; cnt[c]++; for (let j = 0; j < r.p; j++) a[j] += (x[j] - r.mu[j]) / r.sdPop[j]; }
+    if (hasQ(r)) { const acc = range(K).map(() => new Float64Array(r.p)), cnt = new Array(K).fill(0); for (let i = 0; i < r.n; i++) { const c = lab[i], x = r.X[i], a = acc[c]; cnt[c]++; for (let j = 0; j < r.p; j++) a[j] += (x[j] - r.mu[j]) / r.sdPop[j]; }
       const Mz = acc.map((a, c) => Array.from(a, v => v / (cnt[c] || 1)));
       prof = `<div class="svgbox" style="margin-top:10px">${svgHeat(Mz, range(K).map(c => `Classe ${c + 1} · ${lab.filter(l => l === c).length}`), r.vars, PAL_UI, { rot: true, w: 640, cell: v => ({ t: frs(v, 1), f: v / 1.6 }) })}</div><p class="panel-sub">Moyenne de chaque classe en écarts-types : bleu au-dessus de la moyenne générale, orange en dessous.</p>`; }
     else { prof = `<div class="scroll" style="margin-top:10px"><table class="tbl"><thead><tr><th>Classe</th><th>Effectif</th><th>Modalités sur-représentées</th></tr></thead><tbody>${range(K).map(c => { const mem = range(r.n).filter(i => lab[i] === c);
@@ -257,13 +267,19 @@ function pLabo(r) {
 /* ------------------------------------------------------------------ rapport */
 function reportModel(r) {
   const S = r.nAxes, P = PAL_PAPER, secs = [], it = state.inter;
-  secs.push({ t: "En bref", b: [{ ul: brief(r, it).map(x => x[0]) }, { kp: r.method === "AFC" ? [["Effectif total", String(r.n)], ["Lignes × colonnes", `${r.I} × ${r.J}`], ["Axes retenus", String(S)], ["Inertie conservée", pc(r.cum[S - 1])]] : [["Individus", String(r.n)], [r.method === "ACP" ? "Variables" : "Modalités", String(r.method === "ACP" ? r.p : r.M)], ["Axes retenus", String(S)], ["Information conservée", pc(r.cum[S - 1])]] }] });
+  secs.push({ t: "En bref", b: [{ ul: brief(r, it).map(x => x[0]) }, { kp: r.method === "AFC" ? [["Effectif total", String(r.n)], ["Lignes × colonnes", `${r.I} × ${r.J}`], ["Axes retenus", String(S)], ["Inertie conservée", pc(r.cum[S - 1])]] : [["Individus", String(r.n)], [r.method === "ACP" || r.method === "AFDM" ? "Variables" : "Modalités", String(r.method === "ACP" ? r.p : r.method === "AFDM" ? r.p + r.K : r.M)], ["Axes retenus", String(S)], ["Information conservée", pc(r.cum[S - 1])]] }] });
   if (r.method === "ACP") {
     secs.push({ t: "1. Les données", b: [{ p: `L'analyse porte sur <b>${r.n} individus</b> décrits par <b>${r.p} variables quantitatives</b>.${r.removed ? ` ${pl(r.removed, "ligne incomplète a été retirée", "lignes incomplètes ont été retirées")}.` : ""} Les unités diffèrent : l'ACP est <b>normée</b> (données centrées-réduites).` },
       { table: [["Variable", "Moyenne", "Écart-type", "Min", "Max", "CV"], ...r.vars.map((v, j) => [esc(v), fr(r.mu[j]), fr(r.sd[j]), fr(r.min[j]), fr(r.max[j]), r.mu[j] ? fr(r.sd[j] / Math.abs(r.mu[j]) * 100, 0) + " %" : "—"])], cap: "Statistiques descriptives (CV = écart-type ÷ moyenne)." }] });
     secs.push({ t: "2. La méthode", b: [{ table: [["Étape", "Règle utilisée"], ["Nombre d'axes", "Critère de Kaiser (λ ≥ 1) et critère du coude"], ["Variables qui construisent un axe", `Contribution > 1/p = ${fr(100 / r.p, 1)} % ; le signe de la coordonnée donne le côté`], ["Individus qui construisent un axe", "Coordonnée au-delà de ±√λ"], ["Qualité de représentation", "cos² proche de 1 = bien représenté ; prudence près du centre"]] }] });
     const allPos = r.R.every((row, i) => row.every((v, j) => j <= i || v > 0));
     secs.push({ t: "3. Les corrélations", b: [{ svg: heatCorr(r, P), cap: "Bleu : corrélation positive ; orange : négative." }, { p: allPos ? "<b>Effet taille probable</b> : toutes les corrélations sont positives." : "<b>Pas d'effet taille</b> : toutes les corrélations ne sont pas positives ; les axes opposeront des groupes de variables (effet forme)." }] });
+  } else if (r.method === "AFDM") {
+    secs.push({ t: "1. Les données", b: [{ p: `L'analyse porte sur <b>${r.n} individus</b> décrits par <b>${r.p} variables quantitatives</b> et <b>${r.K} qualitatives</b> (${r.M} modalités).${r.removed ? ` ${pl(r.removed, "ligne incomplète a été retirée", "lignes incomplètes ont été retirées")}.` : ""} L'AFDM les analyse ensemble : quantitatives centrées-réduites, modalités pondérées pour que chaque variable pèse au plus 1 sur un axe.` },
+      { table: [["Variable", "Moyenne", "Écart-type", "Min", "Max"], ...r.vars.map((v, j) => [esc(v), fr(r.mu[j]), fr(r.sd[j]), fr(r.min[j]), fr(r.max[j])])], cap: "Variables quantitatives." },
+      { table: [["Modalité", "Effectif", "%"], ...r.mods.map((m, j) => [esc(m), String(r.eff[j]), fr(r.eff[j] / r.n * 100, 1)])], cap: "Variables qualitatives." }] });
+    secs.push({ t: "2. La méthode", b: [{ table: [["Étape", "Règle utilisée"], ["Nombre d'axes", "Valeur propre au-dessus de la moyenne (λ ≥ 1) et critère du coude"], ["Variables liées à un axe", "r² (quantitative) ou η² (qualitative), de 0 à 1 ; leur somme sur un axe vaut λ"], ["Éléments qui construisent un axe", `Contribution > 100/(p + M) = ${fr(100 / (r.p + r.M), 1)} % ; le signe donne le côté`], ["Individus qui construisent un axe", "Coordonnée au-delà de ±√λ"]] }] });
+    secs.push({ t: "3. Les liaisons entre variables", b: [{ svg: svgLinkMap(r, 0, 1, P), cap: "Carré des liaisons, plan (1, 2)." }].concat(r.p >= 2 ? [{ svg: heatCorr(r, P), cap: "Corrélations entre variables quantitatives." }] : []) });
   } else if (r.method === "ACM") {
     const rares = r.mods.filter((m, j) => r.eff[j] / r.n < .05);
     secs.push({ t: "1. Les données", b: [{ p: `L'analyse porte sur <b>${r.n} individus</b> décrits par <b>${r.K} variables qualitatives</b>, soit <b>${r.M} modalités</b>.${r.removed ? ` ${pl(r.removed, "ligne incomplète a été retirée", "lignes incomplètes ont été retirées")}.` : ""}` },
@@ -276,19 +292,20 @@ function reportModel(r) {
   }
   const nb = r.method === "ACM" ? 3 : 4;
   secs.push({ t: `${nb}. Combien d'axes garder ?`, b: [{ svg: svgScree(r, P), cap: "Barres pleines : axes retenus." }, { table: [["Axe", "Valeur propre", "% d'inertie", "% cumulé"], ...r.vals.slice(0, 10).map((v, i) => [String(i + 1), fr(v, 3), fr(r.pct[i], 1), fr(r.cum[i], 1)])] },
-    { ul: [`<b>${r.method === "ACP" ? "Critère de Kaiser" : r.method === "ACM" ? "Seuil 1/K" : "Inertie moyenne"} : ${pl(r.rule, "axe")}.</b>`, `<b>Critère du coude : ${pl(r.coude, "axe")}.</b>`, `<b>Choix retenu : ${pl(S, "axe")}.</b>`] }] });
+    { ul: [`<b>${r.method === "ACP" ? "Critère de Kaiser" : r.method === "AFDM" ? "Valeur propre moyenne (λ ≥ 1)" : r.method === "ACM" ? "Seuil 1/K" : "Inertie moyenne"} : ${pl(r.rule, "axe")}.</b>`, `<b>Critère du coude : ${pl(r.coude, "axe")}.</b>`, `<b>Choix retenu : ${pl(S, "axe")}.</b>`] }] });
   const vis = [[0, 1]].concat(r.q >= 3 && S >= 3 ? [[0, 2]] : []);
-  if (r.method === "ACP") secs.push({ t: "5. Les variables", b: vis.map(([a, b]) => ({ svg: svgCircle(r, a, b, P), cap: `Cercle des corrélations, plan (${a + 1}, ${b + 1}).` })).concat([{ table: [["Variable", ...range(S).map(k => `Coord. ${k + 1}`), ...range(S).map(k => `CTR ${k + 1} (%)`), `cos² ${S} axes`], ...r.vars.map((v, j) => [esc(v), ...range(S).map(k => frs(r.coord[j][k])), ...range(S).map(k => fr(r.vctr[j][k], 1)), fr(sum(r.vcos2[j].slice(0, S)))])] }]) });
+  if (r.method === "AFDM") secs.push({ t: "5. Les variables", b: vis.map(([a, b]) => ({ svg: svgCircle(r, a, b, P), cap: `Cercle des corrélations (quantitatives), plan (${a + 1}, ${b + 1}).` })).concat(vis.map(([a, b]) => ({ svg: svgPlan(planPoints(r, a, b, P).pts, a, b, r, P), cap: `Carte des modalités, plan (${a + 1}, ${b + 1}).` })), [{ table: [["Variable", "Type", ...range(S).map(k => `Liaison axe ${k + 1}`)], ...r.link.map(l => [esc(l.v), l.type === "q" ? "r²" : "η²", ...range(S).map(k => fr(l.r2[k]))])] }]) });
+  else if (r.method === "ACP") secs.push({ t: "5. Les variables", b: vis.map(([a, b]) => ({ svg: svgCircle(r, a, b, P), cap: `Cercle des corrélations, plan (${a + 1}, ${b + 1}).` })).concat([{ table: [["Variable", ...range(S).map(k => `Coord. ${k + 1}`), ...range(S).map(k => `CTR ${k + 1} (%)`), `cos² ${S} axes`], ...r.vars.map((v, j) => [esc(v), ...range(S).map(k => frs(r.coord[j][k])), ...range(S).map(k => fr(r.vctr[j][k], 1)), fr(sum(r.vcos2[j].slice(0, S)))])] }]) });
   else secs.push({ t: `${nb + 1}. ${r.method === "ACM" ? "Carte des modalités" : "Représentation simultanée"}`, b: vis.map(([a, b]) => ({ svg: svgPlan(planPoints(r, a, b, P).pts, a, b, r, P), cap: `Plan (${a + 1}, ${b + 1}).` })) });
   const ib = []; it.forEach(x => { const nm = axisName(x.k); ib.push({ h3: `Axe ${x.k + 1} (${pc(r.pct[x.k])})${nm ? " : " + esc(nm) : ""}` });
-    const nmax = Math.max(x.main.minus.length, x.main.plus.length, 1), lab = r.method === "ACP" ? "Variables" : r.method === "ACM" ? "Modalités" : esc(r.rowName);
+    const nmax = Math.max(x.main.minus.length, x.main.plus.length, 1), lab = r.method === "ACP" ? "Variables" : r.method === "AFDM" ? "Éléments" : r.method === "ACM" ? "Modalités" : esc(r.rowName);
     ib.push({ table: [[`${lab} côté −`, `${lab} côté +`], ...range(nmax).map(i => [x.main.minus[i] ? `${esc(x.main.minus[i].l)} (${fr(x.main.minus[i].c, 1)} %)` : "", x.main.plus[i] ? `${esc(x.main.plus[i].l)} (${fr(x.main.plus[i].c, 1)} %)` : ""])] });
-    if (r.method === "ACP") ib.push({ table: [[`Individus côté − (< −${fr(Math.sqrt(r.vals[x.k]))})`, `Individus côté + (> +${fr(Math.sqrt(r.vals[x.k]))})`], [esc(liste(x.indM, 12, x.nM)), esc(liste(x.indP, 12, x.nP))]] });
+    if (hasQ(r)) ib.push({ table: [[`Individus côté − (< −${fr(Math.sqrt(r.vals[x.k]))})`, `Individus côté + (> +${fr(Math.sqrt(r.vals[x.k]))})`], [esc(liste(x.indM, 12, x.nM)), esc(liste(x.indP, 12, x.nP))]] });
     ib.push({ p: axisPhrase(r, x) }); });
-  secs.push({ t: `${r.method === "ACP" ? 6 : nb + 2}. Interprétation des axes`, b: ib });
-  if (r.method !== "AFC") { const gi = groupIndex(r), pp = r.method === "ACP" ? planPoints(r, 0, 1, P).pts : svgRows(r.n).map(i => ({ v: r.F[i], label: r.names[i], col: gi ? P.g[gi.idx[i] % 10] : P.a[1], r: r.n > 800 ? 2.2 : 3.5 }));
-    secs.push({ t: `${r.method === "ACP" ? 7 : nb + 3}. ${r.method === "ACP" ? "Représentation superposée" : "Carte des individus"}`, b: [{ svg: svgPlan(pp, 0, 1, r, P, { arrows: r.method === "ACP" ? r.coord.map((c, j) => ({ v: c, label: r.vars[j], col: P.a[dominantAxis(r.vcos2[j], r.nAxes)] })) : null }), cap: "Plan (1, 2)." }] }); }
-  const lim = [r.method === "ACP" ? "L'ACP montre des liens linéaires, pas des relations de cause à effet." : "L'analyse décrit des associations, pas des causes."];
+  secs.push({ t: `${hasQ(r) ? 6 : nb + 2}. Interprétation des axes`, b: ib });
+  if (r.method !== "AFC") { const gi = groupIndex(r), pp = hasQ(r) ? planPoints(r, 0, 1, P, false).pts : svgRows(r.n).map(i => ({ v: r.F[i], label: r.names[i], col: gi ? P.g[gi.idx[i] % 10] : P.a[1], r: r.n > 800 ? 2.2 : 3.5 }));
+    secs.push({ t: `${hasQ(r) ? 7 : nb + 3}. ${hasQ(r) ? "Représentation superposée" : "Carte des individus"}`, b: [{ svg: svgPlan(pp, 0, 1, r, P, { arrows: hasQ(r) ? r.coord.map((c, j) => ({ v: c, label: r.vars[j], col: P.a[dominantAxis(r.vcos2[j], r.nAxes)] })) : null }), cap: "Plan (1, 2)." }] }); }
+  const lim = [r.method === "ACP" ? "L'ACP montre des liens linéaires, pas des relations de cause à effet." : r.method === "AFDM" ? "L'AFDM décrit des liaisons (linéaires pour les quantitatives), pas des relations de cause à effet." : "L'analyse décrit des associations, pas des causes."];
   if (r.method !== "AFC" && r.n < 30) lim.push(`Seulement ${r.n} individus : résultats à confirmer sur un échantillon plus grand.`);
   if (r.method === "ACM") lim.push("Les pourcentages d'inertie d'une ACM sont faibles par construction.");
   secs.push({ t: "Ce qu'on retient", b: [{ ul: it.map(x => axisPhrase(r, x)) }, { p: "<b>Limites</b>" }, { ul: lim }] });
@@ -296,7 +313,7 @@ function reportModel(r) {
 }
 function reportHTML(r, forExport) {
   const secs = reportModel(r), title = `Rapport ${r.method} : ${state.example ? EXEMPLES[state.example].label : state.source.replace(/\.[^.]+$/, "")}`;
-  const names = { ACP: "Analyse en composantes principales", ACM: "Analyse des correspondances multiples", AFC: "Analyse factorielle des correspondances" };
+  const names = { AFDM: "Analyse factorielle de données mixtes", ACP: "Analyse en composantes principales", ACM: "Analyse des correspondances multiples", AFC: "Analyse factorielle des correspondances" };
   const body = secs.map(s => `<h2>${esc(s.t)}</h2>` + s.b.map(b => b.p ? `<p>${b.p}</p>` : b.ul ? `<ul>${b.ul.map(x => `<li>${x}</li>`).join("")}</ul>` : b.h3 ? `<h3>${b.h3}</h3>` : b.kp ? `<div class="kp">${b.kp.map(([l, v]) => `<div><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("")}</div>`
     : b.table ? `<table><thead><tr>${b.table[0].map(x => `<th>${x}</th>`).join("")}</tr></thead><tbody>${b.table.slice(1).map(row => `<tr>${row.map(x => `<td>${x}</td>`).join("")}</tr>`).join("")}</tbody></table>${b.cap ? `<div class="cap">${b.cap}</div>` : ""}`
     : b.svg ? `<div class="fig">${b.svg}${b.cap ? `<div class="cap">${b.cap}</div>` : ""}</div>` : "").join("")).join("");
@@ -321,7 +338,7 @@ function exportCSV(r) {
   const S = Math.min(r.q, 5), sep = ";", L = [], num = (x, d) => fr(x, d).replace(/−/g, "-").replace(/\s/g, ""), f = x => num(x, 4);
   if (r.method === "AFC") { L.push(["Element", "Type", ...range(S).map(k => "F" + (k + 1))].join(sep)); r.rowL.forEach((l, i) => L.push([l, "ligne", ...r.F[i].slice(0, S).map(f)].join(sep))); r.colL.forEach((l, j) => L.push([l, "colonne", ...r.G[j].slice(0, S).map(f)].join(sep))); }
   else { L.push(["Individu", ...range(S).map(k => "F" + (k + 1)), ...range(S).map(k => "CTR" + (k + 1)), "cos2_plan12"].join(sep)); r.names.forEach((nm, i) => L.push([nm, ...r.F[i].slice(0, S).map(f), ...r.ctr[i].slice(0, S).map(x => num(x, 3)), f(r.cos2[i][0] + (r.cos2[i][1] || 0))].join(sep)));
-    if (r.method === "ACM") { L.push(""); L.push(["Modalite", ...range(S).map(k => "F" + (k + 1))].join(sep)); r.mods.forEach((m, j) => L.push([m, ...r.G[j].slice(0, S).map(f)].join(sep))); } }
+    if (hasM(r)) { L.push(""); L.push(["Modalite", ...range(S).map(k => "F" + (k + 1))].join(sep)); r.mods.forEach((m, j) => L.push([m, ...r.G[j].slice(0, S).map(f)].join(sep))); } }
   return "﻿" + L.join("\n");
 }
 async function capturePNG() { const b = await Stage.capture(); if (!b) return toast("Capture indisponible sans 3D."); const r = state.res; saveFile(`prisme_${r.method}_vue3d.png`, b); }
@@ -329,9 +346,9 @@ async function capturePNG() { const b = await Stage.capture(); if (!b) return to
 /* ------------------------------------------------------------------ fiche */
 UI.fiche = (it, nbrs = []) => {
   const box = $("#fiche"); if (!it) { box.hidden = true; return; } const r = state.res; let body = "";
-  if (r.method === "ACP" && it.kind === "ind") { const z = r.X[it.i].map((x, j) => (x - r.mu[j]) / r.sdPop[j]), gi = groupIndex(r);
+  if (hasQ(r) && it.kind === "ind") { const z = r.X[it.i].map((x, j) => (x - r.mu[j]) / r.sdPop[j]), gi = groupIndex(r);
     body = `<div class="sub">${gi ? esc(gi.cats[gi.idx[it.i]]) + " · " : ""}profil en écarts-types à la moyenne</div>` + r.vars.map((v, j) => { const zz = clamp(z[j], -3, 3), w = Math.abs(zz) / 3 * 50;
-      return `<div class="zrow"><span title="${esc(v)}">${esc(v)}</span><span class="zbar"><i style="left:${zz < 0 ? 50 - w : 50}%;width:${w}%;background:${zz < 0 ? "var(--neg)" : "var(--pos)"}"></i></span><span class="mono" style="text-align:right">${fr(r.X[it.i][j], Math.abs(r.X[it.i][j]) >= 100 ? 0 : 2)}</span></div>`; }).join(""); }
+      return `<div class="zrow"><span title="${esc(v)}">${esc(v)}</span><span class="zbar"><i style="left:${zz < 0 ? 50 - w : 50}%;width:${w}%;background:${zz < 0 ? "var(--neg)" : "var(--pos)"}"></i></span><span class="mono" style="text-align:right">${fr(r.X[it.i][j], Math.abs(r.X[it.i][j]) >= 100 ? 0 : 2)}</span></div>`; }).join("") + (r.method === "AFDM" ? r.qvars.map((v, j) => `<div class="zrow" style="grid-template-columns:110px 1fr"><span>${esc(v)}</span><span>${esc(r.answers[it.i][j])}</span></div>`).join("") : ""); }
   else if (r.method === "ACM" && it.kind === "ind") body = `<div class="sub">Réponses</div>` + r.vars.map((v, j) => `<div class="zrow" style="grid-template-columns:110px 1fr"><span>${esc(v)}</span><span>${esc(r.answers[it.i][j])}</span></div>`).join("");
   else if (it.kind === "sup") { const v = r.supp.quali.find(q => q.name === it.ref[0]), m = v.mods[it.ref[1]]; body = `<div class="sub">Modalité illustrative · ${m.n} individus · ne participe pas au calcul des axes</div>` + range(Math.min(r.q, 3)).map(k => `<div class="zrow" style="grid-template-columns:110px 1fr 50px"><span>Valeur-test axe ${k + 1}</span><span class="zbar"><i style="left:${m.vtest[k] < 0 ? 50 - clamp(Math.abs(m.vtest[k]) * 8, 0, 50) : 50}%;width:${clamp(Math.abs(m.vtest[k]) * 8, 0, 50)}%;background:${m.vtest[k] < 0 ? "var(--neg)" : "var(--pos)"}"></i></span><span class="mono">${frs(m.vtest[k], 1)}</span></div>`).join("") + `<div class="sub" style="margin-top:8px">|v| > 2 : la modalité est significativement du côté indiqué de l'axe.</div>`; }
   else if (it.kind === "mod") body = `<div class="sub">${r.eff[it.i]} individus (${fr(r.eff[it.i] / r.n * 100, 1)} %)</div>` + range(Math.min(r.nAxes, 3)).map(k => `<div class="zrow" style="grid-template-columns:110px 1fr 50px"><span>Contribution axe ${k + 1}</span><span class="zbar"><i style="left:0;width:${clamp(r.mctr[it.i][k] * 3, 0, 100)}%;background:var(--a${k + 1})"></i></span><span class="mono">${fr(r.mctr[it.i][k], 1)} %</span></div>`).join("");
@@ -349,12 +366,12 @@ const Tour = {
     const st = [{ title: "L'espace factoriel", text: `${esc(who)} projetés dans l'espace des ${pl(S, "premier axe", "premiers axes")} : <b>${pc(r.cum[S - 1])}</b> de l'information.`, view: "3d", focus: null }];
     it.slice(0, S).forEach((x, k) => {
       let idx = [];
-      if (r.method === "ACP") idx = Stage.idxOf("ind", x.idxM.concat(x.idxP));
+      if (hasQ(r)) idx = Stage.idxOf("ind", x.idxM.concat(x.idxP));
       else if (r.method === "ACM") idx = Stage.idxOf("mod", r.mods.map((m, j) => j).filter(j => r.mctr[j][k] > 100 / r.M));
       else idx = Stage.idxOf("row", r.rowL.map((_, i) => i).filter(i => r.rctr[i][k] > 100 / r.I)).concat(Stage.idxOf("col", r.colL.map((_, j) => j).filter(j => r.cctr[j][k] > 100 / r.J)));
-      st.push({ title: `Axe ${k + 1} · ${pc(r.pct[k])}${axisName(k) ? " · " + esc(axisName(k)) : ""}`, text: axisPhrase(r, x).replace(/^<b>[^<]*<\/b> : /, "") + (r.method === "ACP" && (x.indM.length || x.indP.length) ? ` Individus en avant : ${esc(liste(x.indM.concat(x.indP), 5, x.nM + x.nP))}.` : ""), view: k === 2 ? "13" : "12", focus: { axis: k, idx, arrows: false } });
+      st.push({ title: `Axe ${k + 1} · ${pc(r.pct[k])}${axisName(k) ? " · " + esc(axisName(k)) : ""}`, text: axisPhrase(r, x).replace(/^<b>[^<]*<\/b> : /, "") + (hasQ(r) && (x.indM.length || x.indP.length) ? ` Individus en avant : ${esc(liste(x.indM.concat(x.indP), 5, x.nM + x.nP))}.` : ""), view: k === 2 ? "13" : "12", focus: { axis: k, idx, arrows: false } });
     });
-    if (r.method === "ACP") st.push({ title: "Les variables", text: `Les flèches sont les corrélations des variables avec les axes. ${brief(r, it).at(-1)[0]}`, view: "3d", focus: { axis: null, idx: [], arrows: true } });
+    if (hasQ(r)) st.push({ title: "Les variables", text: `Les flèches sont les corrélations des variables avec les axes. ${brief(r, it).at(-1)[0]}`, view: "3d", focus: { axis: null, idx: [], arrows: true } });
     st.push({ title: "À retenir", text: brief(r, it)[0][0], view: "3d", focus: null });
     return st;
   },
@@ -492,13 +509,13 @@ function bind() {
   });
   $("#panel").addEventListener("input", e => {
     if (e.target.id === "searchInd") { state.search = e.target.value; const pos = e.target.selectionStart; renderPanel(); const s = $("#searchInd"); s.focus(); s.setSelectionRange(pos, pos); return; }
-    const j = e.target.dataset.sim; if (j !== undefined && state.sim) { const v = +e.target.value; if (state.res.method === "ACP") state.sim.vals[+j] = v; else state.sim.counts[+j] = Math.round(v); const o = $("#simv" + j); if (o) o.textContent = state.res.method === "ACP" ? fr(v, Math.abs(v) >= 100 ? 0 : 2) : Math.round(v); Sim.update(); return; }
+    const j = e.target.dataset.sim; if (j !== undefined && state.sim) { const v = +e.target.value; if (hasQ(state.res)) state.sim.vals[+j] = v; else state.sim.counts[+j] = Math.round(v); const o = $("#simv" + j); if (o) o.textContent = hasQ(state.res) ? fr(v, Math.abs(v) >= 100 ? 0 : 2) : Math.round(v); Sim.update(); return; }
     const k = e.target.dataset.axis; if (k === undefined) return; state.axisNames[+k] = e.target.value; clearTimeout(bind.t);
     bind.t = setTimeout(() => { renderHeader(); Stage.build(state.res, "none"); document.querySelectorAll(".axis-card .sentence").forEach((p, i) => (p.innerHTML = axisPhrase(state.res, state.inter[i]))); }, 250);
   });
   $("#panel").addEventListener("change", e => {
     const q = e.target.dataset.simq; if (q !== undefined && state.sim) { state.sim.pick[+q] = +e.target.value; Sim.update(); return; }
-    if ((e.target.id === "simFrom" && e.target.value !== "") || (e.target.id === "simFromName" && state.res.names.includes(e.target.value.trim()))) { const r = state.res, i = e.target.id === "simFrom" ? +e.target.value : r.names.indexOf(e.target.value.trim()); if (r.method === "ACP") state.sim.vals = r.X[i].slice(); else state.sim.pick = r.answers[i].map((a, j) => r.mods.findIndex((m, t) => r.modCol[t] === j && r.modName[t] === a)); renderPanel(); }
+    if ((e.target.id === "simFrom" && e.target.value !== "") || (e.target.id === "simFromName" && state.res.names.includes(e.target.value.trim()))) { const r = state.res, i = e.target.id === "simFrom" ? +e.target.value : r.names.indexOf(e.target.value.trim()); if (r.method === "AFDM") { state.sim.vals = r.X[i].slice(); state.sim.pick = r.answers[i].map((a, j) => r.mods.findIndex((m, t) => r.modCol[t] === j && r.modName[t] === a)); } else if (r.method === "ACP") state.sim.vals = r.X[i].slice(); else state.sim.pick = r.answers[i].map((a, j) => r.mods.findIndex((m, t) => r.modCol[t] === j && r.modName[t] === a)); renderPanel(); }
   });
   $("#exportTop").onclick = () => { state.tab = "rapport"; renderPanel(); $("#tabs").scrollIntoView({ behavior: reduced ? "auto" : "smooth" }); };
   $("#fiche").addEventListener("click", e => { if (e.target.closest(".x")) { $("#fiche").hidden = true; Stage.select(-1); return; } const nb = e.target.closest("[data-sel]"); if (nb) Stage.select(+nb.dataset.sel); });

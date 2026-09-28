@@ -57,8 +57,8 @@ const WORKER_HEAD = `const matchMedia = () => ({ matches: true }), document = { 
 const WORKER_MAIN = `
 self.onmessage = e => { const { id, task, payload } = e.data; try { let out;
   if (task === "insights") { const { table, method, params, hcOpts } = payload, t0 = performance.now();
-    const res = method === "ACP" ? runACP(table, params) : method === "ACM" ? runACM(table, params) : runAFC(table, params);
-    const hc = method !== "AFC" && res.n >= 6 ? hcpc(res, hcOpts) : null, sc = method === "ACP" ? scagAll(res) : [], ins = buildInsights(res, table, hc, sc);
+    const res = method === "ACP" ? runACP(table, params) : method === "ACM" ? runACM(table, params) : method === "AFDM" ? runAFDM(table, params) : runAFC(table, params);
+    const hc = method !== "AFC" && res.n >= 6 ? hcpc(res, hcOpts) : null, sc = method === "ACP" || method === "AFDM" ? scagAll(res) : [], ins = buildInsights(res, table, hc, sc);
     out = { ins, hc, scag: sc, ms: performance.now() - t0 }; }
   self.postMessage({ id, ok: true, out }); } catch (err) { self.postMessage({ id, ok: false, err: String((err && err.message) || err) }); } };`;
 const Compute = {
@@ -79,9 +79,9 @@ function setBusy(label) { const b = $("#busyPill"); if (!b) return; b.hidden = !
 /* ------------------------------------------------------------------ calculs de fond partages */
 const Studio = {
   ensureHC(r = state.res) { if (!r || r.method === "AFC" || mainN(r) < 6) return null; const key = JSON.stringify(state.hcOpts); if (!state.hc || state.hc.res !== r || state.hc.key !== key) { const t0 = performance.now(); state.hc = { ...hcpc(r, state.hcOpts), res: r, key, ms: performance.now() - t0 }; } return state.hc; },
-  ensureScag(r = state.res) { if (!r || r.method !== "ACP") return []; if (!state.scag || state.scag.res !== r) state.scag = { res: r, list: scagAll(r) }; return state.scag.list; },
+  ensureScag(r = state.res) { if (!r || !hasQ(r) || r.p < 2) return []; if (!state.scag || state.scag.res !== r) state.scag = { res: r, list: scagAll(r) }; return state.scag.list; },
   finishInsights(r, list, ms, sc, hc) {
-    const nStat = (r.method === "ACP" ? sc.length * 12 + r.p * (r.p - 1) / 2 * 2 + r.p * 12 : 0) + state.work.columns.length * 10 + (hc ? hc.k * 20 : 0) + mainN(r) * 2;
+    const nStat = (hasQ(r) ? sc.length * 12 + r.p * (r.p - 1) / 2 * 2 + r.p * 12 : 0) + state.work.columns.length * 10 + (hc ? hc.k * 20 : 0) + mainN(r) * 2;
     state.insights = { res: r, list, ms, nStat }; Studio._busy = null; setBusy(null);
     const badge = $("#insBadge"); if (badge) { badge.textContent = list.length; badge.hidden = false; } if (state.tab === "insights" || (state.tab === "classes" && hc)) renderPanel();
   },
@@ -219,7 +219,7 @@ function pClasses(r) {
 /* ------------------------------------------------------------------ Matrices : SPLOM + scagnostics, matrice de Bertin */
 const MEAS = ["dcor", "monotonic", "nonmono", "clumpy", "striated", "outlying", "stringy", "skewed"];
 function pMatrices(r) {
-  if (r.method === "ACM") return pBurt(r); if (r.method === "AFC") return pSeriation(r);
+  if (r.method === "ACM" || (r.method === "AFDM" && r.p < 2)) return pBurt(r); if (r.method === "AFC") return pSeriation(r);
   const sc = Studio.ensureScag(r), M = state.mat || (state.mat = {}), meas = M.meas || "dcor", ord = varOrder(r), vars = ord.slice(0, clamp(M.nv || 8, 3, Math.min(10, r.p))), zoom = M.zoom || [vars[0], vars[1]];
   const find = (i, j) => sc.find(s => (s.i === i && s.j === j) || (s.i === j && s.j === i)), top = sc.slice().sort((a, b) => (b[meas] ?? 0) - (a[meas] ?? 0)).slice(0, 8), zs = find(zoom[0], zoom[1]);
   return `<div class="grid2"><div class="card wide"><div class="rowhead"><div><h3 class="panel-title">Matrice de nuages et scagnostics <span class="beyond">au-delà du cours</span></h3><p class="panel-sub" style="margin:0">Sous la diagonale : les nuages ; sur la diagonale : les distributions ; au-dessus : la mesure choisie (Wilkinson, Anand & Grossman 2005), du bleu (faible) au corail (fort). Cliquez une case pour l'agrandir.</p></div>
@@ -234,7 +234,7 @@ function pMatrices(r) {
 }
 const MatUI = {
   mount() {
-    const r = state.res; if (r.method !== "ACP") return; const M = state.mat, sc = Studio.ensureScag(r), meas = M.meas || "dcor", ord = varOrder(r), vars = ord.slice(0, clamp(M.nv || 8, 3, Math.min(10, r.p))), zoom = M.zoom || [vars[0], vars[1]];
+    const r = state.res; if (!hasQ(r) || r.p < 2) return; const M = state.mat, sc = Studio.ensureScag(r), meas = M.meas || "dcor", ord = varOrder(r), vars = ord.slice(0, clamp(M.nv || 8, 3, Math.min(10, r.p))), zoom = M.zoom || [vars[0], vars[1]];
     const cv = $("#splom"); if (cv) this.splom(cv, r, vars, sc, meas, zoom);
     const zp = $("#zoomPlot"); if (zp) { const x = colOf(r, zoom[0]), y = colOf(r, zoom[1]); this._trend = null; this.zoomPlot = new Scatter2D(zp, { pts: x.map((v, i) => [v, y[i]]), colors: itemColors(r), labels: r.names, src: "zoom", ratio: 0.78, axes: false, robust: true, xl: r.vars[zoom[0]], yl: r.vars[zoom[1]],
       after: (g, S) => { const q = (this._trend ??= decileTrend(x, y));
@@ -310,11 +310,11 @@ function pProfil(r) {
       if (Math.abs(d.skew) >= 1) badges.push([`asymétrie ${fr(d.skew, 1)}`, "amber"]); if (d.bc > 0.555 && d.n >= 30 && d.uniq > 5 && Math.abs(d.skew) < 1.2) badges.push(["bimodale ?", "pink"]); if (d.out) badges.push([`${d.out} atypique${d.out > 1 ? "s" : ""}`, "coral"]); if (d.sd === 0) badges.push(["constante", "coral"]); if (d.uniq <= 6) badges.push([`${d.uniq} valeurs`, "faint"]); } }
     else { const f = {}; raw.forEach(v => { if (v !== null && v !== undefined) f[v] = (f[v] || 0) + 1; }); const top = Object.entries(f).sort((a, b) => b[1] - a[1]), k = top.length; stats = `<span><b>${k}</b> modalités</span>${c === ty.ident ? "<span>identifiant</span>" : ""}`;
       if (c !== ty.ident) viz = miniBars(top.slice(0, 8).map(([l, v], i) => ({ l: String(l).slice(0, 8), v, c: `var(--g${i % 10 + 1})` })), 240, 86); if (k > 15 && c !== ty.ident) badges.push(["beaucoup de modalités", "amber"]); if (c !== ty.ident && top.some(([, v]) => v / N < 0.05)) badges.push(["modalités rares", "faint"]); }
-    const roles = c === ty.ident ? [["ident", "Identifiant"]] : m === "AFC" ? [[role, "—"]] : isQ ? (m === "ACP" ? [["active", "Active"], ["illus", "Illustrative"], ["none", "Ignorée"]] : [["illus", "Illustrative"], ["none", "Ignorée"]]) : (m === "ACM" ? [["active", "Active"], ["illus", "Illustrative"], ["none", "Ignorée"]] : [["color", "Couleur des points"], ["illus", "Illustrative"], ["none", "Ignorée"]]);
+    const roles = c === ty.ident ? [["ident", "Identifiant"]] : m === "AFC" ? [[role, "—"]] : isQ ? (m === "ACP" || m === "AFDM" ? [["active", "Active"], ["illus", "Illustrative"], ["none", "Ignorée"]] : [["illus", "Illustrative"], ["none", "Ignorée"]]) : m === "AFDM" ? [["active", "Active"], ["color", "Couleur des points"], ["illus", "Illustrative"], ["none", "Ignorée"]] : (m === "ACM" ? [["active", "Active"], ["illus", "Illustrative"], ["none", "Ignorée"]] : [["color", "Couleur des points"], ["illus", "Illustrative"], ["none", "Ignorée"]]);
     return `<div class="card prof-card role-${role}"><header><div><b title="${esc(c)}">${esc(c)}</b><span class="ty ${isQ ? "q" : "l"}">${isQ ? "quantitative" : "qualitative"}</span></div>
       <select data-role="${esc(c)}" ${roles.length < 2 ? "disabled" : ""} aria-label="Rôle de ${esc(c)}">${roles.map(([v, l]) => `<option value="${v}" ${v === role ? "selected" : ""}>${l}</option>`).join("")}</select></header>
       <div class="prof-viz">${viz}</div><div class="prof-stats">${stats}</div><div class="prof-badges">${badges.map(([l, k]) => `<span class="bdg ${k}">${esc(l)}</span>`).join("")}</div>
-      ${isQ && m === "ACP" ? `<label class="prof-tr">Transformation <select data-tr="${esc(c)}">${Object.entries(TRANSFORMS).map(([k, T]) => `<option value="${k}" ${k === tr ? "selected" : ""}>${T.l}</option>`).join("")}</select></label>` : ""}</div>`;
+      ${isQ && (m === "ACP" || m === "AFDM") ? `<label class="prof-tr">Transformation <select data-tr="${esc(c)}">${Object.entries(TRANSFORMS).map(([k, T]) => `<option value="${k}" ${k === tr ? "selected" : ""}>${T.l}</option>`).join("")}</select></label>` : ""}</div>`;
   }).join("");
   return `<div class="grid2"><div class="card wide prof-head"><div class="qual"><svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="32" fill="none" style="stroke:var(--line-2)" stroke-width="7"/><circle cx="40" cy="40" r="32" fill="none" style="stroke:${quality >= 85 ? "var(--ok)" : quality >= 65 ? "var(--amber)" : "var(--a1)"}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(2 * Math.PI * 32 * quality / 100).toFixed(1)} 400" transform="rotate(-90 40 40)"/><text x="40" y="46" text-anchor="middle" font-size="20" font-weight="600" style="fill:var(--text)">${quality}</text></svg><span>qualité</span></div>
       <div class="prof-sum"><h3 class="panel-title">Profil des données</h3><p class="panel-sub" style="margin:0">${esc(state.source)} · <b>${N}</b> lignes × <b>${cols.length}</b> colonnes · ${ty.quanti.length} quantitatives, ${ty.quali.length} qualitatives · ${pc(miss / cells * 100, 1)} de cases vides · ${dup} doublon${dup > 1 ? "s" : ""}.

@@ -59,6 +59,28 @@ function svgPlan(pts, a, b, res, P, opts = {}) {
   placeLabels(labs, 10.5).forEach(it => { const lx = it.lx + tw(it.text, 10.5) > w - 4 ? it.x - 7 - tw(it.text, 10.5) : it.lx; s += `<text x="${lx}" y="${it.ly}" font-size="10.5" ${it.bold ? 'font-weight="600"' : ""} style="fill:${it.bold ? P.text : P.muted}">${esc(it.text)}</text>`; });
   return s + `</svg>`;
 }
+// carre des liaisons (AFDM) : chaque variable placee selon sa liaison avec deux axes, r^2 (quantitative) ou eta^2 (qualitative), entre 0 et 1
+function svgLinkMap(res, a, b, P, size = 440) {
+  const L = 44, T = 18, R = 18, B = 40, W = size, H = size, X = v => L + (W - L - R) * clamp(v, 0, 1), Y = v => H - B - (H - B - T) * clamp(v, 0, 1); let s = SVGH(W, H);
+  [0, .25, .5, .75, 1].forEach(t => { s += `<line x1="${X(t)}" x2="${X(t)}" y1="${T}" y2="${H - B}" style="stroke:${P.line}"/><line x1="${L}" x2="${W - R}" y1="${Y(t)}" y2="${Y(t)}" style="stroke:${P.line}"/><text x="${X(t)}" y="${H - B + 15}" text-anchor="middle" font-size="10" style="fill:${P.faint}">${fr(t, 2)}</text><text x="${L - 7}" y="${Y(t) + 3.5}" text-anchor="end" font-size="10" style="fill:${P.faint}">${fr(t, 2)}</text>`; });
+  s += `<text x="${W - R}" y="${H - 8}" text-anchor="end" font-size="11" style="fill:${P.muted}">Axe ${a + 1} · ${pc(res.pct[a])}</text><text transform="translate(12,${T + 4}) rotate(90)" font-size="11" style="fill:${P.muted}">Axe ${b + 1} · ${pc(res.pct[b])}</text>`;
+  const items = res.link.map(l => ({ x: X(l.r2[a]), y: Y(l.r2[b]), text: l.v, q: l.type === "q" }));
+  items.forEach(it => { s += it.q ? `<circle cx="${it.x}" cy="${it.y}" r="5" style="fill:${P.a[1]}"/>` : `<rect x="${it.x - 4.5}" y="${it.y - 4.5}" width="9" height="9" rx="1.5" style="fill:${P.a[0]}"/>`; });
+  placeLabels(items, 11).forEach(it => { const lx = it.lx + tw(it.text, 11) > W - 4 ? it.x - 8 - tw(it.text, 11) : it.lx; s += `<text x="${lx}" y="${it.ly}" font-size="11" font-weight="600" style="fill:${P.text}">${esc(it.text)}</text>`; });
+  s += `<circle cx="${L + 10}" cy="${T + 6}" r="4.5" style="fill:${P.a[1]}"/><text x="${L + 20}" y="${T + 10}" font-size="10.5" style="fill:${P.muted}">quantitative · r²</text><rect x="${L + 116}" y="${T + 2}" width="8" height="8" rx="1.5" style="fill:${P.a[0]}"/><text x="${L + 130}" y="${T + 10}" font-size="10.5" style="fill:${P.muted}">qualitative · η²</text>`;
+  return s + `</svg>`;
+}
+// carre des liaisons (AFDM) : chaque variable placee selon sa liaison avec deux axes, r^2 (quantitative) ou eta^2 (qualitative), entre 0 et 1
+function svgLinkMap(res, a, b, P, size = 440) {
+  const L = 44, T = 18, R = 18, B = 40, W = size, H = size, X = v => L + (W - L - R) * clamp(v, 0, 1), Y = v => H - B - (H - B - T) * clamp(v, 0, 1); let s = SVGH(W, H);
+  [0, .25, .5, .75, 1].forEach(t => { s += `<line x1="${X(t)}" x2="${X(t)}" y1="${T}" y2="${H - B}" style="stroke:${P.line}"/><line x1="${L}" x2="${W - R}" y1="${Y(t)}" y2="${Y(t)}" style="stroke:${P.line}"/><text x="${X(t)}" y="${H - B + 15}" text-anchor="middle" font-size="10" style="fill:${P.faint}">${fr(t, 2)}</text><text x="${L - 7}" y="${Y(t) + 3.5}" text-anchor="end" font-size="10" style="fill:${P.faint}">${fr(t, 2)}</text>`; });
+  s += `<text x="${W - R}" y="${H - 8}" text-anchor="end" font-size="11" style="fill:${P.muted}">Axe ${a + 1} · ${pc(res.pct[a])}</text><text transform="translate(12,${T + 4}) rotate(90)" font-size="11" style="fill:${P.muted}">Axe ${b + 1} · ${pc(res.pct[b])}</text>`;
+  const items = res.link.map(l => ({ x: X(l.r2[a]), y: Y(l.r2[b]), text: l.v, q: l.type === "q" }));
+  items.forEach(it => { s += it.q ? `<circle cx="${it.x}" cy="${it.y}" r="5" style="fill:${P.a[1]}"/>` : `<rect x="${it.x - 4.5}" y="${it.y - 4.5}" width="9" height="9" rx="1.5" style="fill:${P.a[0]}"/>`; });
+  placeLabels(items, 11).forEach(it => { const lx = it.lx + tw(it.text, 11) > W - 4 ? it.x - 8 - tw(it.text, 11) : it.lx; s += `<text x="${lx}" y="${it.ly}" font-size="11" font-weight="600" style="fill:${P.text}">${esc(it.text)}</text>`; });
+  s += `<circle cx="${L + 10}" cy="${T + 6}" r="4.5" style="fill:${P.a[1]}"/><text x="${L + 20}" y="${T + 10}" font-size="10.5" style="fill:${P.muted}">quantitative · r²</text><rect x="${L + 116}" y="${T + 2}" width="8" height="8" rx="1.5" style="fill:${P.a[0]}"/><text x="${L + 130}" y="${T + 10}" font-size="10.5" style="fill:${P.muted}">qualitative · η²</text>`;
+  return s + `</svg>`;
+}
 function svgHeat(M, rowL, colL, P, opts = {}) {
   const I = rowL.length, J = colL.length, fs = 11, lw = Math.min(150, maxOf(rowL.map(l => tw(l, fs))) + 14), cw = clamp(((opts.w || 560) - lw) / J, 40, 72), ch = 28, top = opts.rot ? 84 : 28;
   const lastL = colL[J - 1] || "", lastW = tw(lastL.length > 18 ? lastL.slice(0, 17) + "…" : lastL, fs), padR = opts.rot ? Math.max(10, 10 - cw / 2 + lastW * Math.cos(40 * Math.PI / 180)) : 10;
@@ -93,12 +115,15 @@ function svgSpark(vals, n = 8) {
   const v = vals.slice(0, n), m = maxOf(v), w = 70, h = 28, bw = w / v.length;
   return `<svg class="spark" viewBox="0 0 ${w} ${h}" aria-hidden="true">${v.map((x, i) => `<rect x="${i * bw + 1}" y="${h - x / m * h}" width="${bw - 2}" height="${x / m * h}" rx="1.5" style="fill:${i < 3 ? `var(--a${i + 1})` : "var(--line-2)"}"/>`).join("")}</svg>`;
 }
+// methodes : ACP et AFDM ont des variables quantitatives (cercle, fleches) ; ACM et AFDM ont des modalites
+const hasQ = r => r.method === "ACP" || r.method === "AFDM", hasM = r => r.method === "ACM" || r.method === "AFDM";
 function contribItems(res, k) {
+  if (res.method === "AFDM") return res.vars.map((l, j) => ({ l, c: res.vctr[j][k], s: Math.sign(res.coord[j][k]) })).concat(res.mods.map((l, j) => ({ l, c: res.mctr[j][k], s: Math.sign(res.G[j][k]) }))).sort((a, b) => b.c - a.c);
   if (res.method === "ACP") return res.vars.map((l, j) => ({ l, c: res.vctr[j][k], s: Math.sign(res.coord[j][k]) })).sort((a, b) => b.c - a.c);
   if (res.method === "ACM") return res.mods.map((l, j) => ({ l, c: res.mctr[j][k], s: Math.sign(res.G[j][k]) })).sort((a, b) => b.c - a.c);
   return res.rowL.map((l, i) => ({ l, c: res.rctr[i][k], s: Math.sign(res.F[i][k]) })).concat(res.colL.map((l, j) => ({ l: l + " (col.)", c: res.cctr[j][k] * res.I / res.J, s: Math.sign(res.G[j][k]) }))).sort((a, b) => b.c - a.c);
 }
-function seuilOf(res) { return res.method === "ACP" ? 100 / res.p : res.method === "ACM" ? 100 / res.M : 100 / res.I; }
+function seuilOf(res) { return res.method === "AFDM" ? 100 / (res.p + res.M) : res.method === "ACP" ? 100 / res.p : res.method === "ACM" ? 100 / res.M : 100 / res.I; }
 function groupIndex(res) {
   if (state.colorMode === "hcpc" && res.method !== "AFC") { const hc = Studio.ensureHC(res); if (hc) return { cats: range(hc.k).map(i => `Classe ${i + 1}`), idx: hc.labels }; }
   if (state.colorMode === "user" && state.groups.length && res.method !== "AFC") { const G = state.groups, idx = range(res.n).map(i => { const g = G.findIndex(x => x.idx.has(i)); return g < 0 ? G.length : g; }); return { cats: [...G.map(g => g.name), "Autres"], idx }; }
@@ -108,10 +133,12 @@ function groupIndex(res) {
 // graphiques SVG : au-dela de SVGCAP individus, un echantillon est dessine (les plus contributifs sont toujours gardes)
 const SVGCAP = 2500;
 const svgRows = (n, keep = []) => (n <= SVGCAP ? range(n) : [...new Set([...sampleRows(n, SVGCAP, 53), ...keep])].sort((x, y) => x - y));
-function planPoints(res, a, b, P) {
-  if (res.method === "ACP") {
+function planPoints(res, a, b, P, mods = true) {
+  if (res.method === "ACP" || res.method === "AFDM") {
     const gi = groupIndex(res), score = res.F.map(f => f[a] ** 2 / res.vals[a] + f[b] ** 2 / res.vals[b]); const thr = score.slice().sort((x, y) => y - x)[Math.min(13, res.n - 1)], top = range(res.n).filter(i => score[i] >= thr);
-    return { pts: svgRows(res.n, top).map(i => ({ v: res.F[i], label: res.names[i], col: gi ? P.g[gi.idx[i] % 10] : P.a[1], r: res.n > 800 ? 2.4 : 4, op: res.n > 800 ? 0.6 : 1, lab: res.n <= 14 || score[i] >= thr })) };
+    const ind = svgRows(res.n, top).map(i => ({ v: res.F[i], label: res.names[i], col: gi ? P.g[gi.idx[i] % 10] : P.a[1], r: res.n > 800 ? 2.4 : 4, op: res.n > 800 ? 0.6 : 1, lab: res.n <= 14 || score[i] >= thr }));
+    if (res.method === "AFDM" && mods) { const vi = res.qvars; return { pts: ind.map(p => ({ ...p, label: "", lab: false, col: P.faint, op: .45 })).concat(res.G.map((g, j) => ({ v: g, label: res.mods[j], col: P.g[vi.indexOf(res.modVar[j]) % 10], r: 5, lab: true, bold: true }))) }; }
+    return { pts: ind };
   }
   if (res.method === "ACM") { const vi = [...new Set(res.modVar)];
     return { pts: svgRows(res.n).map(i => ({ v: res.F[i], label: "", col: P.faint, r: 2.4, op: .55 })).concat(res.G.map((g, j) => ({ v: g, label: res.mods[j], col: P.g[vi.indexOf(res.modVar[j]) % 10], r: 5, lab: true, bold: true }))) }; }
@@ -137,6 +164,12 @@ async function runBoot(res, B, onP) {
   let step;
   if (res.method === "ACP") step = () => { const X = range(m).map(() => res.X[Math.floor(rnd() * res.n)]); eigSym(corrOf(X)).values.slice(0, q).forEach((v, k) => out[k].push(v)); };
   else if (res.method === "ACM") step = () => { const A = range(m).map(() => res.answers[Math.floor(rnd() * res.n)]); const c = acmCore(A, res.vars); c.all.slice(0, q).forEach((v, k) => out[k].push(v)); };
+  else if (res.method === "AFDM") { const all = res.vars.concat(res.qvars), num = new Set(res.vars);   // AFDM recalculee sur chaque reechantillon (modalite disparue : tirage ignore)
+    step = () => { const rows = range(m).map(() => { const i = Math.floor(rnd() * res.n), o = {}; res.vars.forEach((v, j) => (o[v] = res.X[i][j])); res.qvars.forEach((v, j) => (o[v] = res.answers[i][j])); return o; });
+      try { const e = runAFDM({ rows, numeric: num }, { vars: all }); if (e.M === res.M) e.vals.slice(0, q).forEach((v, k) => out[k].push(v)); } catch (err) {} }; }
+  else if (res.method === "AFDM") { const all = res.vars.concat(res.qvars), num = new Set(res.vars);   // AFDM recalculee sur chaque reechantillon (modalite disparue : tirage ignore)
+    step = () => { const rows = range(m).map(() => { const i = Math.floor(rnd() * res.n), o = {}; res.vars.forEach((v, j) => (o[v] = res.X[i][j])); res.qvars.forEach((v, j) => (o[v] = res.answers[i][j])); return o; });
+      try { const e = runAFDM({ rows, numeric: num }, { vars: all }); if (e.M === res.M) e.vals.slice(0, q).forEach((v, k) => out[k].push(v)); } catch (err) {} }; }
   else { const cells = [], cum = []; let acc = 0; res.N.forEach((row, i) => row.forEach((x, j) => { cells.push([i, j]); acc += x; cum.push(acc); }));
     step = () => { const T = res.N.map(r => r.map(() => 0)); for (let d = 0; d < m; d++) { const u = rnd() * acc; let lo = 0, hi = cum.length - 1; while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] < u) lo = mid + 1; else hi = mid; } T[cells[lo][0]][cells[lo][1]]++; }
       if (T.some(r => sum(r) === 0) || range(T[0].length).some(j => T.every(r => r[j] === 0))) return; afcCore(T).all.slice(0, q).forEach((v, k) => out[k].push(v)); }; }

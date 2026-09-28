@@ -15,6 +15,9 @@ function resultsJSON(r = state.res, maxAxes = 5) {
     individuals: { names: r.names, coord: rows(r.F), cos2: rows(r.cos2), contrib: rows(r.ctr) }, correlation: r.R.map(v => v.map(round)) });
   if (r.method === "ACM") Object.assign(out, { n: r.n, categories: r.mods.map((m, j) => ({ name: m, count: r.eff[j], coord: r.G[j].slice(0, S).map(round), contrib: r.mctr[j].slice(0, S).map(round), cos2: r.mcos2[j].slice(0, S).map(round) })),
     eta2: r.vars.map((v, j) => ({ variable: v, eta2: r.eta2[j].slice(0, S).map(round) })), individuals: { names: r.names, coord: rows(r.F) } });
+  if (r.method === "AFDM") Object.assign(out, { n: r.n, variables: r.vars.map((v, j) => ({ name: v, type: "quantitative", mean: round(r.mu[j]), sd: round(r.sd[j]), coord: r.coord[j].slice(0, S).map(round), contrib: r.vctr[j].slice(0, S).map(round) })),
+    categories: r.mods.map((m, j) => ({ name: m, count: r.eff[j], coord: r.G[j].slice(0, S).map(round), contrib: r.mctr[j].slice(0, S).map(round) })), link: r.link.map(l => ({ variable: l.v, type: l.type === "q" ? "r2" : "eta2", values: l.r2.slice(0, S).map(round) })),
+    individuals: { names: r.names, coord: rows(r.F) } });
   if (r.method === "AFC") Object.assign(out, { chi2: round(r.chi2), df: r.ddl, pValue: r.pval, rows: r.rowL.map((l, i) => ({ name: l, coord: r.F[i].slice(0, S).map(round), contrib: r.rctr[i].slice(0, S).map(round) })), columns: r.colL.map((l, j) => ({ name: l, coord: r.G[j].slice(0, S).map(round), contrib: r.cctr[j].slice(0, S).map(round) })) });
   if (state.hc && state.hc.res === r) out.clusters = { k: state.hc.k, r2: round(state.hc.R2), labels: state.hc.labels, sizes: state.hc.sizes };
   if (state.insights && state.insights.res === r) out.insights = state.insights.list.map(o => ({ kind: o.kind, score: round(o.score), title: o.title, text: o.text }));

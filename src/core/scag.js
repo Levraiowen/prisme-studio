@@ -57,7 +57,7 @@ function scagnostics(x, y, cap = 320) {
 // toutes les paires de variables quantitatives
 // au-dela de 45 paires : pre-tri rapide (rangs sur 1 500 lignes, correlation de distance sur 250) puis analyse complete des 45 paires les plus prometteuses
 function scagAll(res, maxFull = 45) {
-  if (res.method !== "ACP") return []; const p = res.p, cols = range(p).map(j => res.X.map(r => r[j])), pairs = [];
+  if (!res.X || (res.method !== "ACP" && res.method !== "AFDM")) return []; const p = res.p, cols = range(p).map(j => res.X.map(r => r[j])), pairs = [];
   for (let i = 0; i < p; i++) for (let j = i + 1; j < p; j++) pairs.push([i, j]);
   const full = (i, j) => { const s = scagnostics(cols[i], cols[j]); return s ? { i, j, ...s } : null; };
   if (pairs.length <= maxFull) return pairs.map(([i, j]) => full(i, j)).filter(Boolean);

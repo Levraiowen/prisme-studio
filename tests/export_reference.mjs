@@ -1,7 +1,7 @@
 // Exporte les resultats du moteur JavaScript pour la contre-verification Python (tests/crosscheck.py).
 import fs from "node:fs"; import path from "node:path"; import os from "node:os"; import { fileURLToPath, pathToFileURL } from "node:url";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const CORE = ["engine.js", "datasets.js", "explore.js", "stats.js", "prep.js", "cluster.js", "embed.js", "scag.js", "insights.js"];
+const CORE = ["engine.js", "datasets.js", "explore.js", "stats.js", "prep.js", "cluster.js", "embed.js", "scag.js", "insights.js", "big.js"];
 const stubs = `const matchMedia = () => ({ matches: true }), document = { querySelector: () => null, documentElement: { dataset: {} } }, getComputedStyle = () => ({ getPropertyValue: () => "" }), window = {};
 const Papa = { parse: t => ({ data: t.trim().split(/\\r?\\n/).map(l => l.split(",")) }) };\n`;
 const body = `
@@ -13,6 +13,9 @@ const dg = diagTQ(acp); OUT.tq = { T2: dg.T2, Q: dg.Q, ucT: dg.ucT, ucQ: dg.ucQ,
 // ACM (clients du luxe) : methode creuse via le tableau de Burt
 const cl = parseCSV(EXEMPLES.clients.csv, "c"), tc = detect(cl), acm = runACM(cl, { vars: tc.quali, ident: tc.ident });
 OUT.acm = { answers: acm.answers, vars: acm.vars, vals: acm.vals, F: acm.F.map(f => f.slice(0, 4)), G: acm.G.map(g => g.slice(0, 4)), mods: acm.mods, eta2: acm.eta2.map(e => e.slice(0, 4)) };
+// AFDM (e-commerce : 10 quantitatives et 3 qualitatives)
+const ec = parseCSV(EXEMPLES.ecommerce.csv, "e"), te = detect(ec), afdm = runAFDM(ec, { vars: te.quanti.concat(te.quali.filter(c => new Set(ec.rows.map(r => r[c])).size <= 15)), ident: te.ident });
+OUT.afdm = { X: afdm.X, answers: afdm.answers, vals: afdm.vals, F: afdm.F.map(f => f.slice(0, 4)), coord: afdm.coord.map(c => c.slice(0, 4)), eta2: afdm.eta2.map(e => e.slice(0, 4)), G: afdm.G.map(g => g.slice(0, 4)), mods: afdm.mods, modCol: afdm.modCol, modName: afdm.modName, P: afdm.p, K: afdm.K, M: afdm.M };
 // AFC (ventes par region)
 const ve = parseCSV(EXEMPLES.ventes.csv, "v"), tv = detect(ve), afc = runAFC(ve, { mode: "tableau", ident: tv.ident, vars: tv.quanti });
 OUT.afc = { N: afc.N, vals: afc.vals, F: afc.F, G: afc.G, chi2: afc.chi2, ddl: afc.ddl, pval: afc.pval };

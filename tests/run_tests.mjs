@@ -7,7 +7,7 @@ const ctx = { console, performance, Math, setTimeout, Promise, URL, Blob: class 
   matchMedia: () => ({ matches: true }), document: { querySelector: () => null, documentElement: { dataset: {} } }, getComputedStyle: () => ({ getPropertyValue: () => "" }),
   Papa: { parse: t => ({ data: t.trim().split(/\r?\n/).map(l => l.split(",")) }) }, window: {} };
 vm.createContext(ctx);
-const code = CORE.map(f => fs.readFileSync(path.join(root, "src/core", f), "utf8")).join("\n") + "\n;globalThis.__api = { EXEMPLES, parseCSV, detect, runACP, runACM, runAFC, interpret, eigSym, chi2sf, betai, betaInv, chi2Inv, normCdf, normInv, normSf, hyperTail, vtestQuanti, vtestModal, describeSubset, describe, histogram, pearson, spearman, dcor, anova, cramerV, imputePCA, applyTransforms, supplementary, ward, cutTree, leafOrder, hcpc, kmeansW, TSNE, neighborhoodQuality, scagnostics, mstEdges, shepard, diagTQ, reconstruct, inertiaFlows, projInertia, pcaFrame, mulberry, gauss, range, sum, mean, partialCorr, mainCloud, buildInsights, scagAll, applyMissing };";
+const code = CORE.map(f => fs.readFileSync(path.join(root, "src/core", f), "utf8")).join("\n") + "\n;globalThis.__api = { EXEMPLES, parseCSV, detect, runACP, runACM, runAFC, runAFDM, suggest, interpret, eigSym, chi2sf, betai, betaInv, chi2Inv, normCdf, normInv, normSf, hyperTail, vtestQuanti, vtestModal, describeSubset, describe, histogram, pearson, spearman, dcor, anova, cramerV, imputePCA, applyTransforms, supplementary, ward, cutTree, leafOrder, hcpc, kmeansW, TSNE, neighborhoodQuality, scagnostics, mstEdges, shepard, diagTQ, reconstruct, inertiaFlows, projInertia, pcaFrame, mulberry, gauss, range, sum, mean, partialCorr, mainCloud, buildInsights, scagAll, applyMissing };";
 vm.runInContext(code.replace(/^"use strict";/, ""), ctx);
 const A = ctx.__api; let pass = 0, fail = 0;
 const ok = (name, cond, info = "") => { if (cond) { pass++; console.log("  ✓ " + name); } else { fail++; console.log("  ✗ " + name + (info ? "  → " + info : "")); } };
@@ -104,5 +104,15 @@ ok("insight de bimodalité sur le délai de livraison", insE.some(o => o.kind ==
 ok("insight d'atypiques (revendeurs)", insE.some(o => o.kind === "outlier"));
 ok("insight non linéaire âge × durée de session", insE.some(o => o.kind === "nonlin" && o.title.includes("Age") && o.title.includes("Duree_session_min")));
 console.log("   Top 10 :\n     " + insE.slice(0, 10).map(o => `[${o.kind} ${o.score.toFixed(2)}] ${o.title}`).join("\n     "));
+
+console.log("\nAFDM (données mixtes)");
+const pM = { vars: tyE.quanti.concat(["Segment", "Canal", "Region"]), ident: "Client" }, imM = A.applyMissing(ec, "pca", pM, "AFDM"), fd = A.runAFDM(imM.table, pM);
+ok("AFDM : les 600 clients sont gardés après imputation (quantitatives) et modalité « Manquant » (qualitatives)", fd.n === 600, fd.n);
+ok("AFDM : Σλ = p + M − K", Math.abs(A.sum(fd.vals) - (fd.p + fd.M - fd.K)) < 1e-9, `${A.sum(fd.vals).toFixed(9)} / ${fd.p + fd.M - fd.K}`);
+ok("AFDM : λ = Σ r² + Σ η² sur chaque axe", A.range(Math.min(5, fd.q)).every(s => Math.abs(A.sum(fd.link.map(l => l.r2[s])) - fd.vals[s]) < 1e-9));
+ok("AFDM : chaque liaison r² ou η² dans [0, 1]", fd.link.every(l => l.r2.every(v => v >= -1e-12 && v <= 1 + 1e-12)));
+ok("AFDM : variance des coordonnées = λ", A.range(3).every(s => Math.abs(A.sum(fd.F.map(f => f[s] ** 2)) / fd.n - fd.vals[s]) < 1e-9));
+const hcM = A.hcpc(fd), insM = A.buildInsights(fd, imM.table, hcM, A.scagAll(fd)); ok("AFDM : HCPC et insights", hcM.k >= 2 && insM.length >= 5, `k=${hcM.k}, ${insM.length} insights`);
+ok("AFDM proposée pour des données mixtes équilibrées, ACP gardée si les quantitatives dominent", A.suggest(ec, tyE)[0] === "ACP" && A.suggest(ec, { ...tyE, quanti: tyE.quanti.slice(0, 5) })[0] === "AFDM", A.suggest(ec, tyE)[0]);
 
 console.log(`\n${pass} réussis, ${fail} échoués\n`); process.exit(fail ? 1 : 0);

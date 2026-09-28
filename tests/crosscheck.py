@@ -51,6 +51,19 @@ check("somme des valeurs propres = M/K − 1", abs(sum(R["acm"]["vals"]) - (D.sh
 Fi = (U * s) / np.sqrt(r)[:, None]; check("coordonnées des individus (4 axes)", same_up_to_sign(R["acm"]["F"], Fi[:, :4]), 1e-8)
 Gm = (Vt.T * s) / np.sqrt(c)[:, None]; check("coordonnées des modalités (4 axes)", same_up_to_sign(R["acm"]["G"], Gm[:, :4]), 1e-8)
 
+print("\nAFDM (tableau mixte construit explicitement puis diagonalisé par numpy)")
+a = R["afdm"]; Xa = np.array(a["X"], float); ansA = a["answers"]; KA = len(ansA[0]); catsA = [sorted(set(r[j] for r in ansA)) for j in range(KA)]
+Ind = np.array([[1.0 if r[j] == cc else 0.0 for j in range(KA) for cc in catsA[j]] for r in ansA]); pA = Ind.mean(0)
+ZA = np.hstack([(Xa - Xa.mean(0)) / Xa.std(0), (Ind - pA) / np.sqrt(pA)]); nA = ZA.shape[0]; wA, VA = np.linalg.eigh(ZA.T @ ZA / nA); oA = np.argsort(wA)[::-1]; wA, VA = wA[oA], VA[:, oA]; FA = ZA @ VA
+qA = len(a["vals"]); check("valeurs propres de l'AFDM", np.abs(np.array(a["vals"]) - wA[:qA]).max(), 1e-10)
+check("inertie totale = p + M − K", abs(sum(a["vals"]) - (a["P"] + a["M"] - a["K"])), 1e-9)
+check("coordonnées des individus (4 axes)", same_up_to_sign(a["F"], FA[:, :4]), 1e-8)
+check("corrélations quantitatives-axes", same_up_to_sign(a["coord"], np.array([[np.corrcoef(Xa[:, j], FA[:, k])[0, 1] for k in range(4)] for j in range(Xa.shape[1])])), 1e-9)
+etaA = np.array([[sum((np.array([r[j] == cc for r in ansA]).mean()) * FA[[r[j] == cc for r in ansA], k].mean() ** 2 for cc in catsA[j]) / FA[:, k].var() for k in range(4)] for j in range(KA)])
+check("rapports de corrélation η² des qualitatives", np.abs(np.array(a["eta2"]) - etaA).max(), 1e-9)
+GA = np.array([[FA[[r[j] == cc for r in ansA], k].mean() for k in range(4)] for j, cc in zip(a["modCol"], a["modName"])])
+check("modalités au barycentre de leurs individus", same_up_to_sign(a["G"], GA), 1e-9)
+
 print("\nAFC")
 N = np.array(R["afc"]["N"], float); chi2, pval, ddl, _ = stats.chi2_contingency(N, correction=False)
 check("χ² d'indépendance (scipy)", abs(R["afc"]["chi2"] - chi2) / chi2, 1e-12); check("p-valeur du χ²", abs(R["afc"]["pval"] - pval), 1e-12)

@@ -195,6 +195,7 @@ function isContingency(t, ty) {
 function suggest(t, ty) {
   const nq = ty.quanti.length, nl = ty.quali.length;
   if (isContingency(t, ty)) return ["AFC", "le fichier ressemble à un tableau croisé d'effectifs"];
+  if (nq >= 2 && nl >= 2 && Math.min(nq, nl) / Math.max(nq, nl) >= 0.4) return ["AFDM", `${nq} variables quantitatives et ${nl} qualitatives à analyser ensemble`];
   if (nq >= 3 && nq >= nl) return ["ACP", `${nq} variables quantitatives`];
   if (nl >= 3) return ["ACM", `${nl} variables qualitatives`];
   if (nl === 2) return ["AFC", "deux variables qualitatives à croiser"];
@@ -377,6 +378,68 @@ function runACM(t, p) {
   lazy(res, "ctr", () => F.map(row => row.map((x, k) => r * x * x / vals[k] * 100)));
   return res;
 }
+// AFDM, analyse factorielle de donnees mixtes (Pages 2004 ; Escofier 1979) : ACP du tableau forme des variables quantitatives
+// centrees-reduites et des indicatrices des modalites transformees en (x - p_k) / sqrt(p_k). Chaque variable pese au plus 1 sur un axe :
+// r^2 pour une quantitative, rapport de correlation eta^2 pour une qualitative, et lambda_s = somme des r^2 + somme des eta^2.
+// La matrice Z'Z / n est accumulee en une passe, sans tableau disjonctif : correlations, tableau de Burt, sommes de z par modalite.
+const isNumCol = (t, c) => (t.numeric instanceof Set ? t.numeric.has(c) : (() => { let nn = 0, ok = 0; for (const r of t.rows) { const v = r[c]; if (v === null || v === undefined) continue; nn++; if (Number.isFinite(typeof v === "number" ? v : toNum(v))) ok++; } return nn > 0 && ok >= 0.9 * nn; })());
+function runAFDM(t, p) {
+  const qn = p.vars.filter(v => isNumCol(t, v)), ql = p.vars.filter(v => !isNumCol(t, v)), P = qn.length, K = ql.length;
+  if (!P || !K) throw new Error("L'AFDM analyse ensemble des variables quantitatives et qualitatives : choisissez-en au moins une de chaque (sinon ACP ou ACM).");
+  const keep = range(t.rows.length).filter(i => qn.every(v => Number.isFinite(toNum(t.rows[i][v]))) && ql.every(v => t.rows[i][v] !== null && t.rows[i][v] !== undefined)), n = keep.length;
+  if (n < 3) throw new Error("Il faut au moins 3 individus complets.");
+  const t0 = performance.now(), X = keep.map(i => qn.map(v => toNum(t.rows[i][v]))), answers = keep.map(i => ql.map(v => String(t.rows[i][v])));
+  // quantitatives : moyennes et ecarts-types (valeurs remises a l'echelle, comme en ACP)
+  const mu = new Array(P).fill(0), mn = new Array(P).fill(Infinity), mx = new Array(P).fill(-Infinity);
+  for (const r of X) for (let j = 0; j < P; j++) { const x = r[j]; mu[j] += x; if (x < mn[j]) mn[j] = x; if (x > mx[j]) mx[j] = x; }
+  for (let j = 0; j < P; j++) mu[j] /= n;
+  const sc = range(P).map(j => Math.max(mx[j] - mu[j], mu[j] - mn[j]) || 1), ss = new Array(P).fill(0);
+  for (const r of X) for (let j = 0; j < P; j++) ss[j] += ((r[j] - mu[j]) / sc[j]) ** 2;
+  const sd = ss.map((s, j) => sc[j] * Math.sqrt(s / n)), cst = qn.filter((_, j) => !(sd[j] > 0) || mx[j] === mn[j]); if (cst.length) throw new Error(`Variable constante à retirer : ${cst.join(", ")}.`);
+  // qualitatives : modalites, garde-fous identiques a l'ACM
+  const card = ql.map((v, j) => new Set(answers.map(a => a[j])).size), one = ql.filter((_, j) => card[j] < 2); if (one.length) throw new Error(`Variable à une seule modalité, à retirer : ${one.join(", ")}.`);
+  if (sum(card) > 1000) throw new Error(`Trop de modalités pour une AFDM (${sum(card)}, 1 000 au plus).`);
+  const mods = []; ql.forEach((v, j) => [...new Set(answers.map(a => a[j]))].sort((a, b) => a.localeCompare(b, "fr")).forEach(m => mods.push({ v, j, m })));
+  const M = mods.length, pos = ql.map((_, j) => new Map(mods.map((md, a) => [md, a]).filter(([md]) => md.j === j).map(([md, a]) => [md.m, a]))), code = new Int32Array(n * K), eff = new Array(M).fill(0);
+  for (let i = 0; i < n; i++) for (let j = 0; j < K; j++) { const a = pos[j].get(answers[i][j]); code[i * K + j] = a; eff[a]++; }
+  // accumulation : sum z_a z_b, sum de z_a sur chaque modalite, tableau de Burt
+  const Cq = new Float64Array(P * P), Sz = new Float64Array(M * P), B = new Float64Array(M * M), z = new Float64Array(P), inv = sd.map(s => 1 / s);
+  for (let i = 0; i < n; i++) {
+    const r = X[i]; for (let a = 0; a < P; a++) z[a] = (r[a] - mu[a]) * inv[a];
+    for (let a = 0; a < P; a++) { const za = z[a]; for (let b = a; b < P; b++) Cq[a * P + b] += za * z[b]; }
+    for (let j = 0; j < K; j++) { const k = code[i * K + j], o = k * P; for (let a = 0; a < P; a++) Sz[o + a] += z[a]; for (let u = 0; u < K; u++) B[k * M + code[i * K + u]]++; }
+  }
+  const pk = eff.map(e => e / n), sp = pk.map(Math.sqrt), D = P + M;
+  const C = range(D).map(a => range(D).map(b => {
+    if (a < P && b < P) return (a <= b ? Cq[a * P + b] : Cq[b * P + a]) / n;
+    if (a < P) return Sz[(b - P) * P + a] / n / sp[b - P];
+    if (b < P) return Sz[(a - P) * P + b] / n / sp[a - P];
+    const k = a - P, l = b - P; return (B[k * M + l] / n - pk[k] * pk[l]) / (sp[k] * sp[l]);
+  }));
+  const e = eigSym(C), ms = performance.now() - t0, q = Math.max(1, Math.min(D - K, e.values.filter(v => v > 1e-10).length)), vals = e.values.slice(0, q), V = e.vectors.map(row => row.slice(0, q));
+  orient(V, []);
+  // coordonnees des individus : F_is = sum_a z_ia V_as + sum_{k de la ligne} V_ks / sqrt(p_k) - sum_k sqrt(p_k) V_ks
+  const wv = range(M).map(k => V[P + k].map(v => v / sp[k])), cs = range(q).map(s => { let c = 0; for (let k = 0; k < M; k++) c += sp[k] * V[P + k][s]; return c; });
+  const F = new Array(n); for (let i = 0; i < n; i++) { const r = X[i], f = cs.map(c => -c); for (let a = 0; a < P; a++) { const za = (r[a] - mu[a]) * inv[a], Va = V[a]; for (let s = 0; s < q; s++) f[s] += za * Va[s]; } for (let j = 0; j < K; j++) { const w = wv[code[i * K + j]]; for (let s = 0; s < q; s++) f[s] += w[s]; } F[i] = f; }
+  const coord = range(P).map(a => V[a].map((v, s) => v * Math.sqrt(vals[s])));
+  // modalites : barycentres des individus (lambda V_ks / sqrt(p_k)) ; qualitatives : eta^2 = lambda * somme des V_ks^2 de leurs modalites
+  const G = range(M).map(k => V[P + k].map((v, s) => vals[s] * v / sp[k])), mctr = range(M).map(k => V[P + k].map(v => v * v * 100));
+  const eta2 = ql.map((v, j) => range(q).map(s => mods.reduce((acc, md, k) => acc + (md.j === j ? vals[s] * V[P + k][s] ** 2 : 0), 0)));
+  const tot = sum(vals), rule = vals.filter(v => v >= 1 - 1e-9).length, nc = Y => Y.map(row => { const d = row.reduce((a, x) => a + x * x, 0) || 1e-12; return row.map(x => x * x / d); });
+  const res = { method: "AFDM", n, p: P, K, M, removed: t.rows.length - n, vars: qn, qvars: ql, allVars: qn.concat(ql), names: keep.map(i => p.ident ? String(t.rows[i][p.ident]) : `#${i + 1}`), rowsKept: keep,
+    R: range(P).map(a => range(P).map(b => C[a][b])), X, mu, sdPop: sd, sd: ss.map((s, j) => sc[j] * Math.sqrt(s / (n - 1))), min: mn, max: mx,
+    vals, q, pct: vals.map(v => v / tot * 100), cum: cumsum(vals).map(v => v / tot * 100), threshold: 1, thresholdLabel: "λ moyenne = 1", rule, coude: coude(vals), nAxes: nInterp(rule, q, p.nAxes),
+    F, V, coord, vcos2: coord.map(r => r.map(c => c * c)), vctr: coord.map(r => r.map((c, s) => c * c / vals[s] * 100)),
+    answers, mods: mods.map(o => `${o.v} = ${o.m}`), modVar: mods.map(o => o.v), modName: mods.map(o => o.m), modCol: mods.map(o => o.j), eff, G, mctr, mcos2: nc(G), eta2,
+    // liaison de chaque variable (quantitative : r^2, qualitative : eta^2) avec chaque axe ; contribution = liaison / lambda
+    link: qn.map((v, a) => ({ v, type: "q", r2: coord[a].map(c => c * c) })).concat(ql.map((v, j) => ({ v, type: "l", r2: eta2[j] }))),
+    groups: p.color ? keep.map(i => String(t.rows[i][p.color] ?? "—")) : null, color: p.color, sp, cs, pk,
+    engine: { alg: e.alg + " · mixte", mat: `${D}×${D}`, sweeps: e.sweeps, ms, trace: sum(e.values), traceRef: P + M - K, ortho: orthoErr(e.vectors) } };
+  lazy(res, "cos2", () => F.map(row => { const d = row.reduce((a, x) => a + x * x, 0) || 1e-12; return row.map(x => x * x / d); }));
+  lazy(res, "ctr", () => F.map(row => row.map((x, s) => x * x / (n * vals[s]) * 100)));
+  lazy(res, "Z", () => X.map(r => r.map((x, j) => (x - mu[j]) / sd[j])));
+  return res;
+}
 function afcCore(N) {
   const I = N.length, J = N[0].length, n = sum(N.map(sum)), r = N.map(row => sum(row) / n), c = range(J).map(j => N.reduce((a, row) => a + row[j], 0) / n);
   const S = N.map((row, i) => row.map((x, j) => (x / n - r[i] * c[j]) / Math.sqrt(r[i] * c[j])));
@@ -419,9 +482,12 @@ function runAFC(t, p) {
 }
 
 /* ------------------------------------------------------------------ individu supplementaire */
-function projectSupp(res, input) {  // ACP : valeurs brutes ; ACM : indices de modalites ; AFC : effectifs par colonne
+function projectSupp(res, input) {  // ACP : valeurs brutes ; ACM : indices de modalites ; AFDM : les deux ; AFC : effectifs par colonne
   const q = res.q;
   if (res.method === "ACP") { const z = input.map((x, j) => (x - res.mu[j]) / res.sdPop[j]); const F = range(q).map(k => z.reduce((s, zz, j) => s + zz * res.V[j][k], 0)); const d2 = sum(z.map(x => x * x)) || 1e-12; return { F, cos2: F.map(f => f * f / d2) }; }
+  if (res.method === "AFDM") {   // input = { vals : valeurs des quantitatives, pick : indices des modalites choisies }
+    const z = input.vals.map((x, j) => (x - res.mu[j]) / res.sdPop[j]), picked = new Set(input.pick), F = range(q).map(s => { let f = -res.cs[s]; z.forEach((zz, a) => (f += zz * res.V[a][s])); input.pick.forEach(k => (f += res.V[res.p + k][s] / res.sp[k])); return f; });
+    let d2 = sum(z.map(x => x * x)); res.pk.forEach((p, k) => (d2 += picked.has(k) ? (1 - p) ** 2 / p : p)); return { F, cos2: F.map(f => f * f / (d2 || 1e-12)) }; }
   if (res.method === "ACM") { const F = range(q).map(k => sum(input.map(j => res.G[j][k])) / (res.K * Math.sqrt(res.vals[k]))); const d = sum(F.map(f => f * f)) || 1e-12; return { F, cos2: F.map(f => f * f / d) }; }
   const tot = sum(input) || 1, prof = input.map(x => x / tot); const F = range(q).map(k => sum(prof.map((p, j) => p * res.G[j][k])) / Math.sqrt(res.vals[k])); const d = sum(F.map(f => f * f)) || 1e-12; return { F, cos2: F.map(f => f * f / d) };
 }
@@ -439,8 +505,9 @@ function interpret(res) {
   const out = [];
   for (let k = 0; k < res.nAxes; k++) {
     let main, cols = null, indM = [], indP = [], idxM = [], idxP = [], nM = 0, nP = 0, extra = "";
-    if (res.method === "ACP") {
-      main = sides(res.vars, res.vctr, res.coord, k, 100 / res.p);
+    if (res.method === "ACP" || res.method === "AFDM") {
+      main = res.method === "ACP" ? sides(res.vars, res.vctr, res.coord, k, 100 / res.p) : sides(res.vars.concat(res.mods), res.vctr.concat(res.mctr), res.coord.concat(res.G), k, 100 / (res.p + res.M));
+      if (res.method === "AFDM") { const fortes = res.link.filter(l => l.r2[k] >= 0.3).map(l => l.v); if (fortes.length) extra = ` Variables les plus liées (r² ou η² ≥ 0,3) : ${liste(fortes)}.`; }
       // seuls les individus au-dela de +/- racine(lambda) sont tries (grands tableaux)
       const sq = Math.sqrt(res.vals[k]); for (let i = 0; i < res.n; i++) { const f = res.F[i][k]; if (f < -sq) idxM.push(i); else if (f > sq) idxP.push(i); }
       // grands tableaux : on garde les 1 000 plus extremes de chaque cote (seuil par tri numerique), le nombre total reste connu
@@ -465,7 +532,8 @@ function axisName(k) { return (state.axisNames[k] || "").trim(); }
 function axisPhrase(res, it) { const nm = axisName(it.k); return `<b>Axe ${it.k + 1} (${pc(res.pct[it.k])})${nm ? " · " + esc(nm) : ""}</b> : ${esc(it.sentence)}`; }
 function brief(res, inter) {
   const S = res.nAxes, b = [];
-  if (res.method === "ACP") b.push([`<b>${S} axes résument ${pc(res.cum[S - 1])} de l'information</b> (Kaiser : ${pl(res.rule, "valeur propre", "valeurs propres")} ≥ 1${res.coude === res.rule ? ", confirmé par le coude" : ` ; le coude suggère ${pl(res.coude, "axe")}`}).`, "var(--amber)"]);
+  if (res.method === "AFDM") b.push([`<b>${S} axes résument ${pc(res.cum[S - 1])} de l'information</b> (${pl(res.rule, "valeur propre", "valeurs propres")} au-dessus de la moyenne, λ ≥ 1 ; coude : ${pl(res.coude, "axe")}). L'AFDM analyse ensemble ${pl(res.p, "variable quantitative", "variables quantitatives")} et ${pl(res.K, "qualitative", "qualitatives")}.`, "var(--amber)"]);
+  else if (res.method === "ACP") b.push([`<b>${S} axes résument ${pc(res.cum[S - 1])} de l'information</b> (Kaiser : ${pl(res.rule, "valeur propre", "valeurs propres")} ≥ 1${res.coude === res.rule ? ", confirmé par le coude" : ` ; le coude suggère ${pl(res.coude, "axe")}`}).`, "var(--amber)"]);
   else if (res.method === "ACM") b.push([`<b>${pl(res.rule, "axe dépasse", "axes dépassent")} le seuil 1/K = ${fr(res.threshold, 3)}</b> ; les ${S} premiers résument ${pc(res.cum[S - 1])} de l'inertie. En ACM, ces pourcentages sont naturellement faibles.`, "var(--amber)"]);
   else b.push([`<b>Les deux variables sont ${res.pval < 0.05 ? "liées" : "indépendantes"}</b> (χ² = ${fr(res.chi2, 1)}, ${res.ddl} ddl, p ${res.pval < 0.001 ? "< 0,001" : "= " + fr(res.pval, 3)}) ; ${S} axes résument ${pc(res.cum[S - 1])} de l'inertie.`, "var(--amber)"]);
   inter.slice(0, 3).forEach((it, i) => b.push([axisPhrase(res, it), `var(--a${i + 1})`]));
@@ -473,6 +541,11 @@ function brief(res, inter) {
     b.push([res.pct[0] >= 60 ? `<b>L'axe 1 domine (${pc(res.pct[0])})</b> : les variables varient presque toutes ensemble (effet taille).` : `<b>Aucun axe n'écrase les autres</b> : l'axe 1 résume ${pc(res.pct[0])} de l'information.`, "var(--ok)"]);
     let best = null; res.R.forEach((row, i) => row.forEach((v, j) => { if (j > i && (!best || Math.abs(v) > Math.abs(best[0]))) best = [v, i, j]; }));
     if (best) b.push([`<b>Lien le plus fort</b> : ${esc(res.vars[best[1]])} et ${esc(res.vars[best[2]])} (r = ${frs(best[0])}).`, "var(--g7)"]);
+  } else if (res.method === "AFDM") {
+    const top = res.link.map(l => [l.v, l.r2[0]]).sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]);
+    b.push([`<b>Variables les plus liées à l'axe 1</b> (r² ou η²) : ${esc(liste(top))}.`, "var(--g7)"]);
+    let best = null; res.R.forEach((row, i) => row.forEach((v, j) => { if (j > i && (!best || Math.abs(v) > Math.abs(best[0]))) best = [v, i, j]; }));
+    if (best) b.push([`<b>Lien quantitatif le plus fort</b> : ${esc(res.vars[best[1]])} et ${esc(res.vars[best[2]])} (r = ${frs(best[0])}).`, "var(--ok)"]);
   } else if (res.method === "AFC") {
     let mx = [0, 0], mn = [0, 0]; res.ratio.forEach((row, i) => row.forEach((x, j) => { if (x > res.ratio[mx[0]][mx[1]]) mx = [i, j]; if (x < res.ratio[mn[0]][mn[1]]) mn = [i, j]; }));
     b.push([`<b>Plus forte attraction</b> : ${esc(res.rowL[mx[0]])} × ${esc(res.colL[mx[1]])} (+${Math.round((res.ratio[mx[0]][mx[1]] - 1) * 100)} %) · <b>plus forte répulsion</b> : ${esc(res.rowL[mn[0]])} × ${esc(res.colL[mn[1]])} (−${Math.round(Math.abs(res.ratio[mn[0]][mn[1]] - 1) * 100)} %).`, "var(--g7)"]);

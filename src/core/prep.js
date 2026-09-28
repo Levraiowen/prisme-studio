@@ -51,6 +51,12 @@ function applyMissing(table, method, params, am) {
   if (!method || method === "drop" || !params) return { table, info: null };
   // copie a l'ecriture : seules les lignes qui recoivent une valeur imputee sont dupliquees (les autres sont partagees)
   const rows = table.rows.slice(), own = new Uint8Array(rows.length), set = (i, v, x) => { if (!own[i]) { rows[i] = { ...rows[i] }; own[i] = 1; } rows[i][v] = x; };
+  if (params.vars && params.vars.length && am === "AFDM") {
+    const qn = params.vars.filter(v => isNumCol(table, v)), ql = params.vars.filter(v => !isNumCol(table, v)); let info = null, t2 = table;
+    if (qn.length >= 2) { const r1 = applyMissing(table, method, { ...params, vars: qn }, "ACP"); t2 = r1.table; info = r1.info; }
+    else if (qn.length === 1) { const m = mean(table.rows.map(r => toNum(r[qn[0]])).filter(Number.isFinite)); rows.forEach((r, i) => { if (!Number.isFinite(toNum(r[qn[0]]))) set(i, qn[0], m); }); t2 = { ...table, rows }; }
+    const r2 = applyMissing(t2, "modal", { ...params, vars: ql }, "ACM"); return { table: r2.table, info: info || r2.info ? { method: [info?.method, r2.info?.method].filter(Boolean).join(" + "), miss: (info?.miss || 0) + (r2.info?.miss || 0), iter: info?.iter } : null };
+  }
   if (params.vars && params.vars.length && am === "ACP") {
     const X = rows.map(r => params.vars.map(v => toNum(r[v]))); let nMiss = 0; for (const r of X) for (const x of r) if (!Number.isFinite(x)) nMiss++; if (!nMiss) return { table, info: null };
     const keepRow = X.map(r => r.some(Number.isFinite)), Xk = X.filter((_, i) => keepRow[i]);

@@ -98,10 +98,11 @@ const Stage = (() => {
     const P = [], A = [], dims = Math.min(res.q, 3), gi = groupIndex(res);
     // niveau de detail : au-dela de LOD individus, un echantillon est affiche (les calculs portent toujours sur la totalite)
     const idx = res.method !== "AFC" && res.n > LOD ? sampleRows(res.n, LOD, 31) : range(res.method === "AFC" ? res.I : res.n); lod = { shown: idx.length, total: res.method === "AFC" ? res.I : res.n };
-    if (res.method === "ACP") {
+    if (res.method === "ACP" || res.method === "AFDM") {
       const K3 = Math.min(3, res.q), score = idx.map(i => { let s = 0; for (let k = 0; k < K3; k++) s += res.F[i][k] ** 2 / res.vals[k]; return s; }), thr = score.slice().sort((a, b) => b - a)[Math.min(11, idx.length - 1)];
       idx.forEach((i, t) => P.push({ v: res.F[i], color: gi ? `--g${gi.idx[i] % 10 + 1}` : "--a2", size: 0.78, label: res.names[i], kind: "ind", i, lab: score[t] >= thr, grp: gi ? gi.idx[i] : -1 }));
       res.coord.forEach((c, j) => A.push({ v: c, color: `--a${dominantAxis(res.vcos2[j], res.nAxes) + 1}`, label: res.vars[j] }));
+      if (res.method === "AFDM") { const vi = res.qvars; res.G.forEach((g, j) => P.push({ v: g, color: `--g${vi.indexOf(res.modVar[j]) % 10 + 1}`, size: 1.0, label: res.mods[j], kind: "mod", i: j, lab: true, grp: -1 })); }
     } else if (res.method === "ACM") {
       idx.forEach(i => P.push({ v: res.F[i], color: gi ? `--g${gi.idx[i] % 10 + 1}` : "--faint", size: 0.44, label: res.names[i], kind: "ind", i, lab: false, grp: gi ? gi.idx[i] : -1 }));
       const vi = [...new Set(res.modVar)]; res.G.forEach((g, j) => P.push({ v: g, color: `--g${vi.indexOf(res.modVar[j]) % 10 + 1}`, size: 1.0, label: res.mods[j], kind: "mod", i: j, lab: true, grp: -1 }));
@@ -111,7 +112,7 @@ const Stage = (() => {
     }
     if (res.supp && res.method !== "AFC") {
       res.supp.quali.forEach(v => v.mods.forEach((m, t) => P.push({ v: m.coord, color: "--amber", size: 1.05, label: `${v.name} = ${m.cat}`, kind: "sup", i: P.length, ref: [v.name, t], lab: true, grp: -1 })));
-      if (res.method === "ACP") res.supp.quanti.forEach(q => A.push({ v: q.coord, color: "--amber", label: q.name, dashed: true }));
+      if (hasQ(res)) res.supp.quanti.forEach(q => A.push({ v: q.coord, color: "--amber", label: q.name, dashed: true }));
     }
     // densite : plus il y a de points, plus ils sont petits et discrets (sinon le halo additif sature en blanc)
     const km = res.method === "AFC" ? "row" : "ind", nMain = P.filter(p => p.kind === km).length, dens = clamp(Math.sqrt(90 / Math.max(nMain, 1)), 0.34, 1); P.forEach(p => { if (p.kind === km) p.size *= 0.5 + 0.5 * dens; });
@@ -140,7 +141,7 @@ const Stage = (() => {
     root.add(axes, ticks);
     // sphere des correlations et fleches
     sphere = new THREE.Group(); arrows = new THREE.Group();
-    if (res.method === "ACP") {
+    if (hasQ(res)) {
       const Rw = arrowR * scale, sc = col("--faint"); ["x", "y", "z"].forEach(ax => sphere.add(ring(Rw, ax, sc, 0.4)));
       A.forEach(a => { const tipv = world(a.v.map(x => x * arrowR)), len = tipv.length(); if (len < 1e-6) return; const c = col(a.color);
         if (a.dashed) { const g = new THREE.Group(), ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), tipv.clone().multiplyScalar(1 - 0.5 / len)]), new THREE.LineDashedMaterial({ color: c, dashSize: 0.35, gapSize: 0.22 })); ln.computeLineDistances();
@@ -390,7 +391,7 @@ const Stage = (() => {
     if (Tour.active) Tour.stop(); if (mode !== "normal") dropHyper();
     const res = state.res, d = res.q; anim = null; select(-1); setFocus(null); if (cal) cal.visible = false;
     let mx = 1e-9; items.forEach(it => (mx = Math.max(mx, Math.hypot(...it.v))));
-    hyp = { kind, d, sc: 9 / mx, sc0: scale, curSc: scale, t0: performance.now(), B: pcaFrame(d), path: null, playing: true, target: null, info: 0, step: -1, rays: res.method === "ACP" ? res.V.map(r => r.slice(0, d)) : null };
+    hyp = { kind, d, sc: 9 / mx, sc0: scale, curSc: scale, t0: performance.now(), B: pcaFrame(d), path: null, playing: true, target: null, info: 0, step: -1, rays: hasQ(res) ? res.V.slice(0, res.p).map(r => r.slice(0, d)) : null };
     mode = kind; [axes, ticks, arrows, sphere, drops, dots, bary, terrain, unc].forEach(o => o && (o.visible = false)); hsphere.visible = true; $("#toggles").hidden = true;
     view = "3d"; const [p0, u0] = VIEWS["3d"]; camAnim = { t0: performance.now(), dur: reduced ? 0 : 900, p0: camera.position.clone(), u0: camera.up.clone(), p1: p0.clone().setLength(27), u1: u0.clone() };
     buildRays(); syncViews(kind === "tour" ? "hyper" : "anat");
@@ -526,7 +527,7 @@ const Stage = (() => {
   /* ---------- axe gradue : lecture directe d'une variable en unites d'origine (biplot predictif, Gower & Hand 1996) */
   function buildCal() {
     if (cal) { clear(cal); cal = null; labels = labels.filter(L => { if (L.kind === "cal" || L.kind === "calt") { L.el.remove(); return false; } return true; }); }
-    const res = state.res; if (!ok || !res || res.method !== "ACP" || !state.calVar || mode !== "normal") return; const j = res.vars.indexOf(state.calVar); if (j < 0) return;
+    const res = state.res; if (!ok || !res || !hasQ(res) || !state.calVar || mode !== "normal") return; const j = res.vars.indexOf(state.calVar); if (j < 0) return;
     const comps = view === "12" ? [0, 1] : view === "13" ? [0, 2] : view === "23" ? [1, 2] : [0, 1, 2], v = [0, 0, 0]; comps.forEach(k => (v[k] = res.V[j][k] || 0)); const nn = v[0] ** 2 + v[1] ** 2 + v[2] ** 2; if (nn < 1e-6) return;
     const mu = res.mu[j], sd = res.sdPop[j], lo = res.min[j], hi = res.max[j], at = x => world(v.map(c => c * ((x - mu) / sd) / nn)), R = 11, c = col("--amber");
     const span = hi - lo, a0 = at(lo - 0.25 * span), a1 = at(hi + 0.25 * span), clampR = p => (p.length() > R ? p.clone().setLength(R) : p);
