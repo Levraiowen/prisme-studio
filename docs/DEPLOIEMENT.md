@@ -26,57 +26,39 @@ Puis ouvrir http://localhost:8080.
 
 ## 2. Déployer gratuitement
 
-| | Cloudflare Pages (recommandé) | Netlify Drop (le plus rapide) | GitHub Pages (automatique) |
-| --- | --- | --- | --- |
-| Coût | gratuit | gratuit | gratuit (dépôt public) |
-| Mise en ligne | glisser `dist/site` | glisser `dist/site` | à chaque `git push` |
-| Bande passante | illimitée | 100 Go / mois | 100 Go / mois |
-| En-têtes de sécurité (`_headers`) | oui | oui | non (la CSP de la page reste active) |
-| Adresse | `prisme-studio.pages.dev` | `nom.netlify.app` | `pseudo.github.io/prisme-studio` |
+| | GitHub Pages (utilisé) | Netlify Drop (le plus rapide) |
+| --- | --- | --- |
+| Coût | gratuit (dépôt public) | gratuit |
+| Mise en ligne | à chaque `git push` | glisser `dist/site` |
+| Bande passante | 100 Go / mois | 100 Go / mois |
+| En-têtes de sécurité (`_headers`) | non (la CSP de la page reste active) | oui |
+| Adresse | `levraiowen.github.io/prisme-studio` | `nom.netlify.app` |
 
-### Cloudflare Pages, sans ligne de commande (5 minutes)
-
-1. `python build.py`
-2. Sur https://dash.cloudflare.com, créer un compte gratuit.
-3. Aller dans **Workers & Pages → Create → Pages → Upload assets**.
-4. Nommer le projet `prisme-studio`, glisser le dossier `dist/site`, puis **Deploy**.
-5. Le site répond sur `https://prisme-studio.pages.dev`.
-
-Pour une mise à jour : reconstruire, puis **Create deployment** dans le même projet.
-
-En ligne de commande, `npx wrangler login` puis `npm run deploy:cloudflare` fait la même chose.
-
-### Netlify Drop (1 minute)
+### Netlify Drop (1 minute, si besoin d'une autre adresse)
 
 1. Ouvrir https://app.netlify.com/drop.
 2. Glisser `dist/site`.
 
 L'adresse est immédiate ; créer un compte gratuit pour la garder au-delà d'une heure.
 
-### GitHub Pages (déploiement automatique)
+### GitHub Pages (déploiement automatique, en place)
 
-1. Créer un dépôt **public** `prisme-studio` sur GitHub. Pages sur un dépôt privé demande un abonnement payant.
-2. Pousser le code :
+Le dépôt public `Levraiowen/prisme-studio` publie le site sur https://levraiowen.github.io/prisme-studio/. Pages sur un dépôt privé demanderait un abonnement payant.
 
-   ```bash
-   git remote add origin https://github.com/PSEUDO/prisme-studio.git
-   git push -u origin main
-   ```
+À chaque `git push` sur `main`, `.github/workflows/pages.yml` teste le moteur, construit et publie `dist/site`. Réglage côté GitHub (déjà fait) : **Settings → Pages → Source → GitHub Actions**.
 
-3. Sur GitHub, aller dans **Settings → Pages → Source** et choisir **GitHub Actions**.
-
-Ensuite, à chaque `git push`, `.github/workflows/pages.yml` teste le moteur, construit et publie `dist/site`.
+Suivre une publication : onglet **Actions** du dépôt, ou `gh run list`.
 
 ### Nom de domaine (facultatif)
 
-Les trois services acceptent gratuitement un domaine personnel, par exemple `prisme.mondomaine.fr`. Le domaine lui-même coûte environ 10 € par an chez un registraire, et on le relie depuis le tableau de bord de l'hébergeur.
+Les deux services acceptent gratuitement un domaine personnel, par exemple `prisme.mondomaine.fr`. Le domaine lui-même coûte environ 10 € par an chez un registraire, et on le relie depuis le tableau de bord de l'hébergeur.
 
 ## 3. En entreprise : conteneur Docker
 
 ```bash
 python build.py
-docker build -f deploy/Dockerfile -t prisme-studio:4.0.0 .
-docker run --rm -p 8080:8080 prisme-studio:4.0.0
+docker build -f deploy/Dockerfile -t prisme-studio:4.1.0 .
+docker run --rm -p 8080:8080 prisme-studio:4.1.0
 ```
 
 Avec docker-compose : `docker compose -f deploy/docker-compose.yml up -d`.
@@ -92,7 +74,7 @@ Avec docker-compose : `docker compose -f deploy/docker-compose.yml up -d`.
 ## 4. Intégrer dans un portail
 
 - Ajouter le domaine du portail à la directive `frame-ancestors` :
-  - `dist/site/_headers` pour Cloudflare et Netlify ;
+  - `dist/site/_headers` pour Netlify ;
   - `deploy/security-headers.conf` pour nginx.
 - Piloter l'outil par `postMessage` : voir [INTEGRATION.md](INTEGRATION.md) et `examples/embed.html`.
 - L'authentification reste celle du portail ou du proxy : Prisme ne gère pas de comptes.

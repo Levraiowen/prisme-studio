@@ -1,8 +1,0 @@
-// Cloudflare Workers (fichiers statiques) : sert dist/site, construit par « python3 build.py ».
-// Déploiement automatique à chaque push : tableau de bord Cloudflare → Workers & Pages → prisme-studio → Settings → Builds → Connect
-// (dépôt Levraiowen/prisme-studio, commande de build : python3 build.py, commande de déploiement : npx wrangler deploy).
-{
-  "name": "prisme-studio",
-  "compatibility_date": "2026-09-01",
-  "assets": { "directory": "./dist/site" }
-}

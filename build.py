@@ -1,6 +1,6 @@
 """Construit Prisme Studio.
 
-    python build.py             dist/site/                 site statique prêt à déployer (Cloudflare Pages, Netlify, GitHub Pages, nginx)
+    python build.py             dist/site/                 site statique prêt à déployer (GitHub Pages, Netlify, nginx)
                                                            index.html, service worker (hors ligne), manifeste (installable), en-têtes de sécurité
                                 dist/Prisme-Studio.html    l'application en un seul fichier (à ouvrir ou à partager tel quel)
                                 dist/artifact.html         même application sans CSP (hébergeur qui impose la sienne)
@@ -129,7 +129,7 @@ self.addEventListener("fetch", e => {{
   else if (CDN.includes(u.hostname)) e.respondWith(caches.match(r).then(m => m || fetch(r).then(res => {{ const c = res.clone(); caches.open(V).then(ca => ca.put(r, c)); return res; }})));   // versions figees dans l'URL : cache d'abord
 }});
 """, encoding="utf-8")
-# en-tetes HTTP (Cloudflare Pages et Netlify lisent ce fichier ; GitHub Pages l'ignore, la CSP de la page s'applique alors seule)
+# en-tetes HTTP (Netlify lit ce fichier ; GitHub Pages l'ignore, la CSP de la page s'applique alors seule)
 (site / "_headers").write_text(f"""/*
   Content-Security-Policy: {CSP}; frame-ancestors 'self'
   X-Content-Type-Options: nosniff

@@ -9,7 +9,6 @@
     "crosscheck": "python tests/crosscheck.py",
     "bench": "node --max-old-space-size=8192 tests/bench.mjs 100000 20",
     "serve": "python -m http.server 8080 --directory dist/site",
-    "deploy:cloudflare": "npx wrangler pages deploy dist/site --project-name prisme-studio",
     "deploy:netlify": "npx netlify-cli deploy --dir dist/site --prod"
   }
 }

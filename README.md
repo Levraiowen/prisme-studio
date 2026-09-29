@@ -27,9 +27,9 @@ Ouvrir `dist/Prisme-Studio.html` par double-clic. L'écran d'accueil propose un 
 
 ## Mettre en ligne gratuitement
 
-`python build.py` produit `dist/site/`, un site prêt à déployer. Le plus simple : sur [Cloudflare Pages](https://dash.cloudflare.com), aller dans **Workers & Pages → Create → Pages → Upload assets**, glisser `dist/site`, et le site est en ligne.
+Le site est publié par **GitHub Pages** : https://levraiowen.github.io/prisme-studio/. À chaque `git push`, `.github/workflows/pages.yml` teste le moteur, construit `dist/site/` et le met en ligne.
 
-Les autres options sont détaillées dans [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md) : Netlify Drop, GitHub Pages automatique à chaque push, Docker pour une entreprise.
+Les autres options sont détaillées dans [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md) : Netlify Drop, Docker pour une entreprise.
 
 Une fois en ligne, l'application est installable et fonctionne hors ligne.
 
@@ -60,7 +60,7 @@ prisme-studio/
 ├── README.md              ce fichier
 ├── CHANGELOG.md           historique des versions
 ├── build.py               construit dist/ à partir de src/
-├── package.json           raccourcis : npm run build | test | serve | deploy:cloudflare | deploy:netlify
+├── package.json           raccourcis : npm run build | test | serve | deploy:netlify
 ├── src/
 │   ├── core/              moteur de calcul, sans interface (tourne aussi dans les Web Workers)
 │   │   ├── engine.js      lecture des fichiers, ACP, ACM, AFC, valeurs propres

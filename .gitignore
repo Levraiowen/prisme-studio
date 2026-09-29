@@ -6,7 +6,6 @@ tests/_*
 __pycache__/
 *.pyc
 node_modules/
-.wrangler/
 .netlify/
 # jeux de données : ne jamais publier de données réelles
 *.csv
