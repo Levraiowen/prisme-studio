@@ -762,4 +762,24 @@ body.bigmode main > .stage, body.bigmode main > .kpis, body.bigmode main > .tabs
 .ty-sel.l{color:var(--a1)}
 .bdg.info{color:var(--a2);background:color-mix(in srgb,var(--a2) 12%,transparent)}
 @media (max-width:760px){.tnode{grid-template-columns:minmax(0,1fr) 60px 60px;padding-left:calc(8px + var(--d) * 12px)} .tnode .tbar{display:none} .qual-card .q-issue{grid-template-columns:1fr} .imp-row{grid-template-columns:minmax(0,1fr) 70px 52px}.imp-row .imp-b{display:none}}
+/* ------------------------------------------------------------------ grands volumes : relief 3D, lasso, types */
+.bg-relief{position:absolute;inset:0;cursor:grab;touch-action:none}
+.bg-relief:active{cursor:grabbing}
+.bg-relief canvas{display:block;width:100%;height:100%}
+.bg-map.relief{cursor:default}
+.rl-labels{position:absolute;inset:0;pointer-events:none}
+.rl-labels span{position:absolute;transform:translate(-50%,-50%);font:600 12px var(--f-body);white-space:nowrap;padding:2px 6px;border-radius:6px;background:color-mix(in srgb,var(--bg-2) 70%,transparent)}
+.btn.ic{min-width:32px;padding-inline:8px;font-size:15px;line-height:1}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.bg-typecard summary{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;cursor:pointer;list-style:none}
+.bg-typecard summary::-webkit-details-marker{display:none}
+.bg-typecard summary::before{content:"▸";color:var(--muted);transition:transform .15s}
+.bg-typecard[open] summary::before{transform:rotate(90deg)}
+.bg-typecard summary .panel-title{margin:0}
+.bg-tylist{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-top:10px}
+.bg-ty{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;align-items:center;padding:7px 9px;border:1px solid var(--line);border-radius:10px;font-size:12.5px}
+.bg-ty.man{border-color:color-mix(in srgb,var(--amber) 60%,transparent)}
+.bg-ty .bg-tyn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bg-ty select{padding:4px 6px;border-radius:7px;border:1px solid var(--line-2);background:var(--bg-2);font-size:12px}
+.bg-ty small{grid-column:1/-1;font-size:10.5px}
 

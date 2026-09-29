@@ -139,11 +139,28 @@ function parseCSV(text, name) {
   const res = Papa.parse(text.replace(/^﻿/, ""), { skipEmptyLines: "greedy", delimitersToGuess: [",", ";", "\t", "|"] });
   return tableFromMatrix(res.data, name);
 }
-let xlsxLoading = null;
+// lecteurs charges a la demande (Excel : SheetJS ; Parquet : hyparquet), dans la page ou dans un fil de calcul
+const XLSX_URL = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js", HYPARQUET_URL = "https://cdn.jsdelivr.net/npm/hyparquet@1.31.2/+esm";
+let xlsxLoading = null, pqLoading = null;
 function loadXLSX() {
-  if (window.XLSX) return Promise.resolve();
-  return xlsxLoading ??= new Promise((ok, ko) => { const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"; s.onload = ok; s.onerror = () => ko(new Error("Impossible de charger le lecteur Excel (connexion internet nécessaire).")); document.head.appendChild(s); });
+  if (globalThis.XLSX) return Promise.resolve();
+  const fail = () => new Error("Impossible de charger le lecteur Excel (connexion internet nécessaire).");
+  if (typeof importScripts === "function") { try { importScripts(XLSX_URL); return Promise.resolve(); } catch (e) { return Promise.reject(fail()); } }
+  return xlsxLoading ??= new Promise((ok, ko) => { const s = document.createElement("script"); s.src = XLSX_URL; s.onload = ok; s.onerror = () => { xlsxLoading = null; ko(fail()); }; document.head.appendChild(s); });
 }
+// premiere feuille d'un classeur ; les dates Excel (nombres au format date) deviennent du texte ISO lu sans decalage
+// de fuseau horaire (2024-03-15, 2024-03-15 13:30:00, ou 13:30:00 pour une heure seule), reconnu ensuite comme date
+function xlsxSheet(buf) {
+  const wb = XLSX.read(buf, { type: "array", dense: true, cellNF: true }), ws = wb.Sheets[wb.SheetNames[0]]; if (!ws) throw new Error("Classeur vide.");
+  const isD = new Map(), z2 = n => String(n).padStart(2, "0");
+  const fix = c => { if (!c || c.t !== "n" || !c.z || c.z === "General") return; let d = isD.get(c.z); if (d === undefined) { d = XLSX.SSF.is_date(c.z); isD.set(c.z, d); } if (!d || !Number.isFinite(c.v)) return;
+    const p = XLSX.SSF.parse_date_code(c.v); if (!p) return; const hm = `${z2(p.H)}:${z2(p.M)}:${z2(p.S)}`, s = c.v < 1 ? hm : `${p.y}-${z2(p.m)}-${z2(p.d)}${p.H || p.M || p.S ? " " + hm : ""}`;
+    c.t = "s"; c.v = s; c.w = s; delete c.z; };
+  const rows = ws["!data"] || (Array.isArray(ws) ? ws : null);
+  if (rows) { for (const r of rows) if (r) for (let j = 0; j < r.length; j++) fix(r[j]); } else for (const k in ws) if (k[0] !== "!") fix(ws[k]);
+  return ws;
+}
+function loadParquet() { return pqLoading ??= import(HYPARQUET_URL).catch(() => { pqLoading = null; throw new Error("Impossible de charger le lecteur Parquet (connexion internet nécessaire)."); }); }
 // tableau d'objets (JSON, Parquet, API) : colonnes = union des cles, puis meme typage que pour un CSV
 function tableFromObjects(arr, name) {
   if (!Array.isArray(arr) || !arr.length) throw new Error("Les données doivent être un tableau d'objets (une ligne par objet).");
@@ -153,9 +170,9 @@ function tableFromObjects(arr, name) {
 }
 // lecture d'un contenu binaire selon son extension : CSV / TSV / TXT, Excel, JSON, Parquet
 async function readBuffer(buf, name) {
-  if (/\.(xlsx|xls|xlsm)$/i.test(name)) { await loadXLSX(); const wb = XLSX.read(buf, { type: "array" }); return tableFromMatrix(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null, raw: true }), name); }
+  if (/\.(xlsx|xls|xlsm)$/i.test(name)) { await loadXLSX(); return tableFromMatrix(XLSX.utils.sheet_to_json(xlsxSheet(buf), { header: 1, defval: null, raw: true }), name); }
   if (/\.parquet$/i.test(name)) {
-    let pq; try { pq = await import("https://cdn.jsdelivr.net/npm/hyparquet@1.31.2/+esm"); } catch (e) { throw new Error("Impossible de charger le lecteur Parquet (connexion internet nécessaire)."); }
+    const pq = await loadParquet();
     return tableFromObjects(await pq.parquetReadObjects({ file: buf }), name);
   }
   let text = new TextDecoder("utf-8").decode(buf); if (text.includes(String.fromCharCode(0xFFFD))) text = new TextDecoder("windows-1252").decode(buf);

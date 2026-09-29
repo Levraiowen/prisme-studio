@@ -46,6 +46,46 @@ if (!${N}) {
   const d = bt.density({ a: 0, b: 1, box: a.ext[0].slice(0, 2).concat(a.ext[1].slice(0, 2)), G: 256, ramp: [[0, 0, 0], [255, 255, 255]], pal: [[255, 0, 0]], dark: true });
   ok(d.inside + d.outside === a.N && sum(Array.from(d.cnt)) === d.inside, "carte de densité : chaque ligne comptée une fois (" + d.inside + " dans le cadre)");
   const smp = bt.sample(5000); ok(smp.rows.length === 5000 && smp.columns.length === 9, "échantillon de 5 000 lignes pour le Studio");
+  console.log("\nLasso (polygone) : test par bandes comparé au test point par point");
+  { const naive = (P, x, y) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, yi] = P[i], [xj, yj] = P[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
+    const R3 = mulberry(8); let bad = 0, tot = 0, ins = 0;
+    for (const nv of [3, 7, 60, 400]) {
+      // polygone etoile irregulier (non convexe), avec aretes horizontales et sommets repetes
+      const P = range(nv).map(k => { const t = 2 * Math.PI * k / nv, r = 0.3 + R3() * 0.7; return [Math.round(r * Math.cos(t) * 50) / 50, Math.round(r * Math.sin(t) * 50) / 50]; });
+      const inside = polyTester(P);
+      for (let i = 0; i < 50000; i++) { const x = Math.round((R3() * 2.4 - 1.2) * 100) / 100, y = Math.round((R3() * 2.4 - 1.2) * 100) / 100, a = inside(x, y), b = naive(P, x, y); tot++; ins += a; if (a !== b) bad++; }
+    }
+    ok(bad === 0 && ins > 1000, "lasso : " + tot + " points sur une grille (sommets et arêtes compris), " + ins + " à l'intérieur, " + bad + " désaccord");
+    const A0 = bt.acp, e0 = A0.ext[0], e1 = A0.ext[1], cx = (e0[0] + e0[1]) / 2, cy = (e1[0] + e1[1]) / 2, P2 = range(120).map(k => { const t = 2 * Math.PI * k / 120, r = (k % 2 ? 0.35 : 0.2) * (e0[1] - e0[0]); return [cx + r * Math.cos(t), cy + r * Math.sin(t)]; });
+    const sl = bt.setFilters([{ type: "poly", a: 0, b: 1, pts: P2 }]); let ref = 0; for (let i = 0; i < bt.n; i++) if (A0.ok[i] && naive(P2, A0.F[0][i], A0.F[1][i])) ref++;
+    ok(sl.count === ref && ref > 100, "filtre lasso sur la carte : " + sl.count + " lignes, comme le test point par point (" + ref + ")");
+    const s2 = bt.setFilters([{ type: "poly", a: 0, b: 1, pts: P2 }, { type: "cats", col: "seg", codes: [0] }]); let ref2 = 0; for (let i = 0; i < bt.n; i++) if (A0.ok[i] && naive(P2, A0.F[0][i], A0.F[1][i]) && bt.cat[0].data[i] === 0) ref2++;
+    ok(s2.count === ref2, "lasso combiné à une modalité : " + s2.count + " lignes");
+    bt.setFilters([]); }
+
+  console.log("\nLecture en colonnes (Parquet) comparée à la lecture CSV");
+  { const R4 = mulberry(12), n = 5000, day = Date.UTC(2021, 0, 1);
+    const cols = { id: range(n).map(i => BigInt(i)), x: Float64Array.from(range(n), () => gauss(R4)), k: range(n).map(i => (i % 11 === 0 ? null : BigInt(i % 40))), flag: range(n).map(i => i % 3 === 0),
+      seg: range(n).map(i => (i % 17 === 0 ? null : ["nord", "sud", "est"][i % 3])), d: range(n).map(i => new Date(day + (i % 30) * 864e5)), txt: range(n).map(i => "libre " + i), miss: range(n).map(i => (i % 5 ? "NA" : "3.5")) };
+    const names = Object.keys(cols), groups = [[0, 1200], [1200, 3000], [3000, 5000]], bq = new BigTable("t.parquet");
+    const sample = names.map(c => range(1200).map(i => pqStr(cols[c][i])));
+    bq.initCols(names, sample, n, ["imbrique"]);
+    for (const [a0, a1] of groups) { names.forEach((c, j) => { const src = cols[c], chunk = ArrayBuffer.isView(src) ? src.subarray(a0, a1) : src.slice(a0, a1); bq.putCol(j, chunk, 0, a0, a1 - a0); }); bq.n = a1; }
+    const sq = bq.finish();
+    const csv = [names.join(","), ...range(n).map(i => names.map(c => pqStr(cols[c][i])).join(","))].join("\n"), bc = new BigTable("t.csv"), sc = feed(bc, enc(csv), 4096);
+    const role = (b, c) => b.cols.find(o => o.name === c)?.role, same = names.every(c => role(bq, c) === role(bc, c));
+    ok(same && role(bq, "id") === "skip" && role(bq, "x") === "num" && role(bq, "k") === "num" && role(bq, "seg") === "cat" && role(bq, "flag") === "cat" && role(bq, "txt") === "skip" && role(bq, "imbrique") === "skip",
+      "mêmes types que le CSV : " + names.map(c => c + "=" + role(bq, c) + (role(bq, c) === role(bc, c) ? "" : "/" + role(bc, c))).join(" "));
+    const nx = c => bq.num.find(o => o.name === c).data, cx2 = c => bc.num.find(o => o.name === c).data;
+    ok(sq.n === n && ["x", "k"].every(c => nx(c).every((v, i) => (Number.isNaN(v) && Number.isNaN(cx2(c)[i])) || v === cx2(c)[i])), "valeurs numériques identiques, entiers 64 bits et manquants compris");
+    const lab = (b, c, i) => { const o = b.cat.find(q => q.name === c), v = o.data[i]; return v === B_NA ? null : o.labels[v]; };
+    ok(["seg", "flag", "d"].every(c => range(n).every(i => lab(bq, c, i) === lab(bc, c, i))) && lab(bq, "d", 1) === "2021-01-02" && lab(bq, "seg", 17) === null, "modalités identiques (textes, booléens, dates ISO, manquants)");
+    ok(bq.num.find(o => o.name === "miss").st.n === 1000, "marqueur « NA » lu comme manquant");
+    const bt2 = new BigTable("t.parquet"); bt2.types = { id: "num", seg: "skip", k: "cat" }; bt2.initCols(names, sample, n);
+    ok(role(bt2, "id") === "num" && role(bt2, "seg") === "skip" && role(bt2, "k") === "cat" && bt2.cols.find(o => o.name === "k").auto === "num", "types imposés à la main (identifiant en nombre, modalités ignorées, nombre en modalités)"); }
+  { const bt3 = new BigTable("c.csv"); bt3.types = { seg: "skip", v0: "cat" }; feed(bt3, enc(text), 65536);
+    ok(bt3.cols.find(o => o.name === "seg").role === "skip" && bt3.cat.some(o => o.name === "v0") && bt3.cat.find(o => o.name === "v0").labels.length === 1000, "CSV relu avec des types imposés : v0 en modalités (1 000 au plus), seg ignorée"); }
+
   console.log("\n" + (checks - fails) + " contrôles réussis sur " + checks); if (fails) process.exitCode = 1;
 } else {
   const file = process.env.TEMP_CSV;

@@ -460,8 +460,8 @@ function bind() {
   $("#examples").addEventListener("click", e => { const b = e.target.closest("[data-ex]"); if (!b) return; const ex = EXEMPLES[b.dataset.ex]; loadTable(parseCSV(ex.csv, ex.file), ex.file, b.dataset.ex); });
   const fi = $("#fileInput"), drop = $("#drop");
   const take = async f => { if (!f) return;
-    if (/\.(csv|tsv|txt|dat)$/i.test(f.name) && (f.size > BIG_THRESHOLD || $("#bigForce").checked)) { try { await BigUI.open({ file: f }); } catch (e) { $("#errBox").hidden = false; $("#errBox").textContent = e.message; } return; }
-    if (f.size > BIG_THRESHOLD) toast("Fichier volumineux : au-delà de 500 000 lignes, un export CSV s'ouvre en mode grands volumes (plusieurs millions de lignes).");
+    if (bigKind(f.name) && ($("#bigForce").checked || await isBigFile(f))) { try { await BigUI.open({ file: f }); } catch (e) { $("#errBox").hidden = false; $("#errBox").textContent = e.message; } return; }
+    if (f.size > BIG_THRESHOLD) toast("Fichier volumineux : cochez « Grands volumes » pour le lire en flux (plusieurs millions de lignes).");
     try { setBusy(`lecture de ${f.name} (${fr(f.size / 1048576, 1)} Mo)`); await new Promise(r => setTimeout(r, 30)); const t0 = performance.now(), t = await readFile(f); setBusy("calcul de l'analyse"); await new Promise(r => setTimeout(r, 30)); loadTable(t, f.name, null); setBusy(null); toast(`${f.name} : ${t.rows.length.toLocaleString("fr-FR")} lignes × ${t.columns.length} colonnes, lues et analysées en ${fr((performance.now() - t0) / 1000, 1)} s`); } catch (e) { setBusy(null); $("#errBox").hidden = false; $("#errBox").textContent = e.message; } };
   $("#urlForm").addEventListener("submit", async e => { e.preventDefault(); const u = $("#urlIn").value.trim(); if (!u) return;
     if ($("#bigForce").checked || await isBigURL(u)) { try { await BigUI.open({ url: u, force: true }); } catch (err) { $("#errBox").hidden = false; $("#errBox").textContent = err.message; } return; }
@@ -530,7 +530,8 @@ function bind() {
   });
   document.addEventListener("keydown", e => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); $("#palette").hidden ? Palette.open() : Palette.close(); return; }
-    if (BigUI.open_) { if (e.key === "Escape") { if (!$("#palette").hidden) Palette.close(); else if (!$("#about").hidden) $("#about").hidden = true; else if (BigUI.filters.length) { BigUI.filters = []; BigUI.applyFilters(); } } return; }
+    if (BigUI.open_ && (e.ctrlKey || e.metaKey) && !e.target.closest?.("input, select, textarea") && (e.key.toLowerCase() === "z" || e.key.toLowerCase() === "y")) { e.preventDefault(); return e.key.toLowerCase() === "y" || e.shiftKey ? BigUI.redo() : BigUI.undo(); }
+    if (BigUI.open_) { if (e.key === "Escape") { if (!$("#palette").hidden) Palette.close(); else if (!$("#about").hidden) $("#about").hidden = true; else if (BigUI.filters.length) { BigUI.pushHist(); BigUI.filters = []; BigUI.applyFilters(); } } return; }
     if (e.key === "Escape") { if (!$("#palette").hidden) return Palette.close(); if (!$("#about").hidden) return ($("#about").hidden = true); if (Drawer.kind) return Drawer.close(); if (Tour.active) return Tour.stop(); if (Stage.mode !== "normal") return Stage.exitHyper(); if (Stage.lassoOn) return toggleLasso(); if (state.sel.size) return Sel.clear(); if (!$("#fiche").hidden) { $("#fiche").hidden = true; Stage.select(-1); } return; }
     if (e.target.closest?.("input, select, textarea") || e.ctrlKey || e.metaKey || e.altKey || !$("#palette").hidden) return;
     const k = e.key.toLowerCase();

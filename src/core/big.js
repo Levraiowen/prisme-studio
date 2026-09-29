@@ -44,11 +44,11 @@ function sniffDelim(text) {
 class BigTable {
   constructor(name = "donnees.csv") { this.name = name; this.n = 0; this.cap = 0; this.bytes = 0; this.total = 0; this.left = null; this.header = null; this.cols = []; this.t0 = performance.now(); this.bad = 0; }
   /* ---------- 1. debut du fichier : separateur, en-tetes, types */
-  init(head, total = 0) {
+  init(head, total = 0, delim = null) {
     this.total = total; let off = head[0] === 0xEF && head[1] === 0xBB && head[2] === 0xBF ? 3 : 0; this.bom = off;
     let text = new TextDecoder("utf-8").decode(head.subarray(off, Math.min(head.length, off + (4 << 20))));
     this.dec = new TextDecoder(text.includes(String.fromCharCode(0xFFFD)) ? "windows-1252" : "utf-8"); if (this.dec.encoding !== "utf-8") text = this.dec.decode(head.subarray(off, Math.min(head.length, off + (4 << 20))));
-    const D = sniffDelim(text); this.D = D.charCodeAt(0); this.delim = D;
+    const D = delim || sniffDelim(text); this.D = D.charCodeAt(0); this.delim = D;
     // lecture des premieres lignes en texte (memes regles que le reste du fichier)
     const rows = []; this._scan(head, off, head.length, head.length === total || !total, (b, fs, fe, fq, nf) => { if (rows.length > BIGCFG.sniffRows) return false; const r = []; for (let f = 0; f < nf; f++) r.push(this._str(b, fs[f], fe[f], fq[f])); rows.push(r); return true; });
     if (rows.length < 2) throw new Error("Le fichier doit contenir une ligne d'en-têtes et au moins une ligne de données.");
@@ -57,21 +57,57 @@ class BigTable {
     // virgule decimale : separateur autre que la virgule et nombres du type 12,5
     let comma = 0, dot = 0; for (const r of body.slice(0, 2000)) for (const v of r) { if (/^\s*-?\d+,\d+\s*$/.test(v)) comma++; else if (/^\s*-?\d+\.\d+\s*$/.test(v)) dot++; }
     this.dc = D !== "," && comma > dot ? 44 : 46;
+    this.cols = this._detect(names, body);
+    const avg = Math.max(8, (Math.min(head.length, 4 << 20)) / Math.max(1, rows.length));
+    this.cap = Math.max(1024, Math.ceil((total || head.length) / avg * 1.12) + 1024);
+    this._alloc(); this.NC = NC; this.fs = new Int32Array(NC + 1); this.fe = new Int32Array(NC + 1); this.fq = new Uint8Array(NC + 1);
+    this.header = true; this.left = null; this.pos = off;
+    return this.meta();
+  }
+  // type de chaque colonne d'apres les premieres lignes (textes) : nombres si 90 % au moins se lisent comme des nombres,
+  // identifiant ou texte libre ignores ; puis les types imposes par l'utilisateur (this.types = { nom: "num" | "cat" | "skip" })
+  _detect(names, body) {
     const idName = /^(id|ids|index|idx|key|cl[ée]|code|num|num[ée]ro|no|n°|#|rowid|row_id)$|^id[_\s.-]|[_\s.-]id$|^unnamed/i;
-    this.cols = names.map((name, c) => {
+    const cols = names.map((name, c) => {
       let ne = 0, ok = 0, allInt = true, seq = true; const dist = new Set();
-      body.forEach((r, i) => { const v = (r[c] ?? "").trim(); if (v === "" || (v.length < 10 && MISSING.has(v.toLowerCase()))) return; ne++; if (dist.size <= BIGCFG.catMax) dist.add(v); const x = this.dc === 44 ? toNum(v) : toNum(v); if (Number.isFinite(x)) { ok++; if (!Number.isInteger(x)) allInt = false; if (x !== i && x !== i + 1) seq = false; } else seq = false; });
+      body.forEach((r, i) => { const v = (r[c] ?? "").trim(); if (v === "" || (v.length < 10 && MISSING.has(v.toLowerCase()))) return; ne++; dist.add(v); const x = toNum(v); if (Number.isFinite(x)) { ok++; if (!Number.isInteger(x)) allInt = false; if (x !== i && x !== i + 1) seq = false; } else seq = false; });
       if (!ne) return { name, role: "skip", why: "vide" };
       if (ok >= 0.9 * ne) { if (allInt && dist.size === ne && ne > 20 && (seq || idName.test(name.trim()))) return { name, role: "skip", why: "identifiant" }; return { name, role: "num" }; }
       if (dist.size > BIGCFG.catMax || (dist.size > 200 && dist.size > 0.3 * ne)) return { name, role: "skip", why: dist.size > BIGCFG.catMax ? "identifiant ou texte libre" : dist.size >= ne * 0.95 ? "identifiant" : "texte" };
       return { name, role: "cat" };
     });
-    const avg = Math.max(8, (Math.min(head.length, 4 << 20)) / Math.max(1, rows.length));
-    this.cap = Math.max(1024, Math.ceil((total || head.length) / avg * 1.12) + 1024);
-    this.cols.forEach(c => { if (c.role === "num") c.data = new Float32Array(this.cap); if (c.role === "cat") { c.data = new Uint16Array(this.cap); c.map = new Map(); c.labels = []; c.raw = []; c.byStr = new Map(); } });
-    this.NC = NC; this.fs = new Int32Array(NC + 1); this.fe = new Int32Array(NC + 1); this.fq = new Uint8Array(NC + 1);
-    this.header = true; this.left = null; this.pos = off;
+    const T = this.types || {};
+    for (const c of cols) { const r = T[c.name]; if ((r === "num" || r === "cat" || r === "skip") && r !== c.role) { c.auto = c.role; c.role = r; c.why = r === "skip" ? "retirée à la main" : "type choisi à la main"; } }
+    return cols;
+  }
+  _alloc() { this.cols.forEach(c => { if (c.role === "num") c.data = new Float32Array(this.cap); if (c.role === "cat") { c.data = new Uint16Array(this.cap); c.map = new Map(); c.labels = []; c.raw = []; c.byStr = new Map(); } }); }
+  /* ---------- 1 bis. fichiers en colonnes (Parquet) : types detectes sur les premieres valeurs, puis copie colonne par colonne */
+  initCols(names, sample, total, nested = []) {
+    this.total = 0; this.delim = null; this.dc = 46; this.dec = null; this.format = "Parquet";
+    const m = sample.length ? sample[0].length : 0; if (!m) throw new Error("Le fichier ne contient aucune ligne.");
+    const body = Array.from({ length: m }, (_, i) => sample.map(col => col[i]));
+    this.cols = this._detect(names, body).concat(nested.map(name => ({ name, role: "skip", why: "structure imbriquée" })));
+    this.cap = total; this._alloc(); this.NC = names.length; this.header = false;
     return this.meta();
+  }
+  // copie de valeurs Parquet (nombres, entiers 64 bits, booleens, dates, textes, manquants) dans la colonne c, lignes at .. at + count
+  putCol(c, src, from, at, count) {
+    const col = this.cols[c]; if (!col || col.role === "skip") return; const d = col.data;
+    if (col.role === "num") {
+      if (ArrayBuffer.isView(src) && !(src instanceof BigInt64Array) && !(src instanceof BigUint64Array)) { for (let i = 0; i < count; i++) { const v = src[from + i]; d[at + i] = v > -3.4e38 && v < 3.4e38 ? v : NaN; } return; }
+      for (let i = 0; i < count; i++) { const v = src[from + i]; let x;
+        if (typeof v === "number") x = v; else if (v === null || v === undefined) x = NaN; else if (typeof v === "bigint") x = Number(v); else if (typeof v === "boolean") x = v ? 1 : 0; else if (v instanceof Date) x = v.getTime(); else x = toNum(String(v));
+        d[at + i] = x > -3.4e38 && x < 3.4e38 ? x : NaN; }
+      return;
+    }
+    let lastV, lastC = B_NA;   // valeurs repetees (colonnes triees, dictionnaires) : pas de nouvelle recherche
+    for (let i = 0; i < count; i++) { const v = src[from + i]; if (i && v === lastV) { d[at + i] = lastC; continue; } lastV = v;
+      const t = pqStr(v).trim(); lastC = t === "" ? B_NA : this._catLabel(col, t); d[at + i] = lastC; }
+  }
+  _catLabel(col, label) {
+    let code = col.byStr.get(label); if (code !== undefined) return code;
+    if (label.length < 10 && MISSING.has(label.toLowerCase())) code = B_NA; else if (col.labels.length >= BIGCFG.catMax) { col.overflow = (col.overflow || 0) + 1; code = B_OTHER; } else { code = col.labels.length; col.labels.push(label); }
+    col.byStr.set(label, code); return code;
   }
   _str(b, s, e, q) { let t = this.dec ? this.dec.decode(b.subarray(s, e)) : new TextDecoder().decode(b.subarray(s, e)); return q ? t.replace(/""/g, '"') : t; }
   /* ---------- 2. decoupage en lignes et champs (guillemets RFC 4180) ; renvoie la position de la premiere ligne incomplete */
@@ -142,7 +178,7 @@ class BigTable {
     col.byStr.set(label, code); return code;
   }
   progress() { return { bytes: this.bytes, total: this.total, rows: this.n, ms: performance.now() - this.t0 }; }
-  meta() { return { name: this.name, delim: this.delim, decimal: this.dc === 44 ? "," : ".", encoding: this.dec?.encoding, cols: this.cols.map(c => ({ name: c.name, role: c.role, why: c.why })) }; }
+  meta() { return { name: this.name, format: this.format || "CSV", delim: this.delim, decimal: this.dc === 44 ? "," : ".", encoding: this.dec?.encoding, cols: this.cols.map(c => ({ name: c.name, role: c.role, why: c.why, auto: c.auto })) }; }
   /* ---------- 4. fin de lecture : colonnes a la taille exacte, statistiques exactes, echantillon */
   finish() {
     const n = this.n; if (n < 3) throw new Error("Il faut au moins 3 lignes de données.");
@@ -227,6 +263,7 @@ class BigTable {
     for (const f of this.filters) {
       if (f.type === "range") { const d = this.num.find(c => c.name === f.col)?.data; if (!d) continue; const lo = f.lo, hi = f.hi; for (let i = 0; i < n; i++) if (m[i]) { const v = d[i]; if (!(v >= lo && v <= hi)) m[i] = 0; } }
       else if (f.type === "cats") { const c = this.cat.find(c => c.name === f.col); if (!c) continue; const lut = new Uint8Array(65536); f.codes.forEach(k => (lut[k >= c.labels.length ? B_OTHER : k] = 1)); const d = c.data; for (let i = 0; i < n; i++) if (m[i] && !lut[d[i]]) m[i] = 0; }
+      else if (f.type === "poly" && a && f.pts && f.pts.length >= 3) { const X = a.F[f.a], Y = a.F[f.b], inside = polyTester(f.pts); for (let i = 0; i < n; i++) if (m[i] && !inside(X[i], Y[i])) m[i] = 0; }
       else if (f.type === "rect" && a) { const X = a.F[f.a], Y = a.F[f.b]; for (let i = 0; i < n; i++) if (m[i]) { const x = X[i], y = Y[i]; if (!(x >= f.x0 && x <= f.x1 && y >= f.y0 && y <= f.y1)) m[i] = 0; } }
       else if (f.type === "class" && a && a.cls) { const lut = new Uint8Array(256); f.codes.forEach(k => (lut[k] = 1)); const d = a.cls; for (let i = 0; i < n; i++) if (m[i] && !lut[d[i]]) m[i] = 0; }
       else if (f.type === "outlier" && a) { for (let i = 0; i < n; i++) if (m[i] && !(a.T2[i] > a.ucT || (a.ucQ !== null && a.Q[i] > a.ucQ))) m[i] = 0; }
@@ -320,6 +357,48 @@ class BigTable {
     return { columns: cols.map(c => c.name), numeric: cols.filter(c => c.role === "num").map(c => c.name), rows, n: idx.length, total: n, fromSel: !!base };
   }
 }
+// point dans un polygone (regle pair-impair, resultat identique a PNPOLY) : les aretes sont rangees par bandes horizontales,
+// chaque point n'est compare qu'aux quelques aretes de sa bande (lasso de plusieurs centaines de sommets sur des millions de lignes)
+// (arete k -> k-1, orientee comme dans PNPOLY de W. R. Franklin : memes arrondis pour les points poses sur un bord)
+function polyTester(pts) {
+  const n = pts.length; let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const [x, y] of pts) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  const B = Math.max(1, Math.min(2048, 2 * n)), hB = (y1 - y0) / B || 1, band = y => Math.min(B - 1, Math.max(0, Math.floor((y - y0) / hB))), L = Array.from({ length: B }, () => []);
+  for (let k = 0; k < n; k++) { const [xa, ya] = pts[k], [xb, yb] = pts[(k + n - 1) % n]; if (ya === yb) continue; for (let b = band(Math.min(ya, yb)), e = band(Math.max(ya, yb)); b <= e; b++) L[b].push(xa, ya, xb, yb); }
+  const E = L.map(l => Float64Array.from(l));
+  return (x, y) => {
+    if (!(x >= x0 && x <= x1 && y >= y0 && y <= y1)) return false;
+    const e = E[band(y)]; let c = false;
+    for (let k = 0; k < e.length; k += 4) { const ya = e[k + 1], yb = e[k + 3]; if ((ya > y) !== (yb > y) && x < (e[k + 2] - e[k]) * (y - ya) / (yb - ya) + e[k]) c = !c; }
+    return c;
+  };
+}
+// valeur Parquet en texte (modalites et detection des types) : dates au format ISO, entiers 64 bits, booleens
+function pqStr(v) { if (v === null || v === undefined) return ""; if (typeof v === "string") return v; if (v instanceof Date) { const t = v.toISOString(); return t.endsWith("T00:00:00.000Z") ? t.slice(0, 10) : t.slice(0, 19).replace("T", " "); } if (typeof v === "object" && !ArrayBuffer.isView(v)) return JSON.stringify(v, (k, x) => (typeof x === "bigint" ? Number(x) : x)); return String(v); }
+// lecture d'un fichier Parquet groupe de lignes par groupe de lignes (memoire bornee par la taille d'un groupe)
+async function bigParquet(bt, a, onMeta, tick, pause) {
+  const pq = await loadParquet(), file = a.file ? { byteLength: a.file.size, slice: (s, e) => a.file.slice(s, e).arrayBuffer() } : a.url ? await pq.asyncBufferFromUrl({ url: a.url }) : a.bytes;
+  const md = await pq.parquetMetadataAsync(file), tree = pq.parquetSchema(md), total = Number(md.num_rows), size = file.byteLength;
+  const flat = tree.children.filter(c => !c.children.length).map(c => c.element.name), nested = tree.children.filter(c => c.children.length).map(c => c.element.name);
+  if (!flat.length) throw new Error("Aucune colonne simple dans ce fichier Parquet (seulement des structures imbriquées).");
+  if (total < 3) throw new Error("Il faut au moins 3 lignes de données.");
+  bt.total = size; let rowStart = 0, first = true; const idx = new Map(flat.map((c, j) => [c, j]));
+  for (const rg of md.row_groups) {
+    const rowEnd = rowStart + Number(rg.num_rows); if (rowEnd === rowStart) continue;
+    const chunks = []; await pq.parquetRead({ file, metadata: md, columns: flat, rowStart, rowEnd, onChunk: c => chunks.push(c) });
+    if (first) {
+      const m = Math.min(BIGCFG.sniffRows, rowEnd - rowStart), sample = flat.map(() => new Array(m).fill(""));
+      for (const c of chunks) { const j = idx.get(c.columnName); if (j === undefined) continue; for (let i = Math.max(c.rowStart, rowStart); i < Math.min(c.rowEnd, rowStart + m); i++) sample[j][i - rowStart] = pqStr(c.columnData[i - c.rowStart]); }
+      onMeta(bt.initCols(flat, sample, total, nested)); first = false;
+    }
+    for (const c of chunks) { const j = idx.get(c.columnName), s = Math.max(c.rowStart, rowStart), e = Math.min(c.rowEnd, rowEnd); if (j !== undefined && e > s) bt.putCol(j, c.columnData, s - c.rowStart, s, e - s); }
+    bt.n = rowEnd; bt.bytes = Math.round(size * rowEnd / total); rowStart = rowEnd; tick(); await pause();
+  }
+}
+// classeur Excel : premiere feuille convertie en CSV (nombres bruts, dates ISO), puis lecture habituelle
+async function xlsxToCSV(buf) {
+  await loadXLSX(); return XLSX.utils.sheet_to_csv(xlsxSheet(buf), { rawNumbers: true, blankrows: false });
+}
 // echantillonnage par selection sequentielle (Knuth, algorithme S) : m indices tries parmi n, memoire O(m)
 function selSample(n, m, seed = 1) { const rnd = mulberry(seed), out = new Int32Array(m); let t = 0; for (let i = 0; i < n && t < m; i++) if ((n - i) * rnd() < m - t) out[t++] = i; return out; }
 // traitement des messages (Web Worker, ou fil principal si les workers sont indisponibles)
@@ -328,10 +407,16 @@ async function bigHandle(msg, post) {
   const { id, cmd, a = {} } = msg, done = (out, tr) => post({ id, ok: true, out }, tr);
   try {
     if (cmd === "open") {
-      BT = null; const bt = new BigTable(a.name), CH = 8 << 20; let last = 0;
+      BT = null; const bt = new BigTable(a.name), CH = 8 << 20; let last = 0; bt.types = a.types || null;
       const tick = () => { const t = performance.now(); if (t - last > 90) { last = t; post({ id, type: "progress", p: bt.progress() }); } };
       const pause = () => (a.yieldEach ? new Promise(r => setTimeout(r, 0)) : null);
-      if (a.file) {
+      if (a.kind === "parquet") await bigParquet(bt, a, meta => post({ id, type: "meta", meta }), tick, pause);
+      else if (a.kind === "xlsx" && !a.text) {
+        post({ id, type: "phase", text: "Lecture du classeur Excel…" });
+        const buf = a.file ? await a.file.arrayBuffer() : await (await fetch(a.url, { credentials: "omit" })).arrayBuffer(), u = new TextEncoder().encode(await xlsxToCSV(buf));
+        bt.format = "Excel"; post({ id, type: "meta", meta: bt.init(u, u.length, ",") }); bt.ingest(u, true);
+      }
+      else if (a.file) {
         const f = a.file, total = f.size, head = new Uint8Array(await f.slice(0, Math.min(total, 2 << 20)).arrayBuffer());
         post({ id, type: "meta", meta: bt.init(head, total) });
         for (let pos = 0; pos < total; pos += CH) { bt.ingest(new Uint8Array(await f.slice(pos, Math.min(total, pos + CH)).arrayBuffer()), pos + CH >= total); tick(); await pause(); }
@@ -340,7 +425,7 @@ async function bigHandle(msg, post) {
         const r = a.url ? await fetch(a.url, { credentials: "omit" }) : null; if (r && !r.ok) throw new Error(`Chargement impossible (${r.status}) : ${a.url}`);
         const total = r ? +(r.headers.get("content-length") || 0) : 0, rd = r ? r.body.getReader() : null; let parts = [], size = 0, init = false;
         const flush = isLast => { const buf = new Uint8Array(size); let o = 0; for (const p of parts) { buf.set(p, o); o += p.length; } parts = []; size = 0;
-          if (!init) { post({ id, type: "meta", meta: bt.init(buf, isLast ? buf.length : total) }); init = true; } bt.ingest(buf, isLast); };
+          if (!init) { post({ id, type: "meta", meta: bt.init(buf, isLast ? buf.length : total, a.delim || null) }); init = true; } bt.ingest(buf, isLast); };
         if (rd) for (;;) { const { done: fin, value } = await rd.read(); if (fin) break; parts.push(value); size += value.length; if (size >= CH) { flush(false); tick(); await pause(); } }
         else { const u = typeof a.text === "string" ? new TextEncoder().encode(a.text) : new Uint8Array(a.bytes); parts.push(u); size = u.length; }
         flush(true);
