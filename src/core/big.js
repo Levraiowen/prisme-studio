@@ -377,8 +377,12 @@ function polyTester(pts) {
 function pqStr(v) { if (v === null || v === undefined) return ""; if (typeof v === "string") return v; if (v instanceof Date) { const t = v.toISOString(); return t.endsWith("T00:00:00.000Z") ? t.slice(0, 10) : t.slice(0, 19).replace("T", " "); } if (typeof v === "object" && !ArrayBuffer.isView(v)) return JSON.stringify(v, (k, x) => (typeof x === "bigint" ? Number(x) : x)); return String(v); }
 // lecture d'un fichier Parquet groupe de lignes par groupe de lignes (memoire bornee par la taille d'un groupe)
 async function bigParquet(bt, a, onMeta, tick, pause) {
-  const pq = await loadParquet(), file = a.file ? { byteLength: a.file.size, slice: (s, e) => a.file.slice(s, e).arrayBuffer() } : a.url ? await pq.asyncBufferFromUrl({ url: a.url }) : a.bytes;
-  const md = await pq.parquetMetadataAsync(file), tree = pq.parquetSchema(md), total = Number(md.num_rows), size = file.byteLength;
+  const pq = await loadParquet(); let file;
+  if (a.file) file = { byteLength: a.file.size, slice: (s, e) => a.file.slice(s, e).arrayBuffer() };
+  else if (a.url) { try { file = await pq.asyncBufferFromUrl({ url: a.url }); } catch (e) { const st = /\b(\d{3})\b/.exec(e.message || ""); throw new Error(`Chargement impossible${st ? ` (${st[1]})` : ""} : ${a.url}`); } }
+  else file = a.bytes;
+  let md; try { md = await pq.parquetMetadataAsync(file); } catch (e) { throw new Error("Fichier Parquet illisible (" + (e.message || e) + ")."); }
+  const tree = pq.parquetSchema(md), total = Number(md.num_rows), size = file.byteLength;
   const flat = tree.children.filter(c => !c.children.length).map(c => c.element.name), nested = tree.children.filter(c => c.children.length).map(c => c.element.name);
   if (!flat.length) throw new Error("Aucune colonne simple dans ce fichier Parquet (seulement des structures imbriquées).");
   if (total < 3) throw new Error("Il faut au moins 3 lignes de données.");

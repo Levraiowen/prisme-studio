@@ -1,5 +1,39 @@
 # Historique des versions
 
+## 4.1.0 — 29 septembre 2026
+
+### Analyse
+
+- **AFDM** (analyse factorielle de données mixtes) : quantitatives et qualitatives dans la même analyse, carré des liaisons, carte des modalités, simulateur, rapport.
+- **Onglet Cible** (mode supervisé) : valeur d'information et AUC de chaque variable, arbre de décision lisible (CART), taux par classe et par modalité, couleur de la 3D par la cible. Les variables trop parfaites (AUC ≥ 0,95) sont signalées comme fuites possibles et écartées de l'arbre.
+- **Onglet Comparer** : deux groupes (sélection, classe, modalité, cible) comparés variable par variable ; d de Cohen, test de Welch, V de Cramér.
+- **Onglet Temps** : dates reconnues (ISO, jj/mm/aaaa…), variables dérivées, évolution par mois, trimestre ou année, trajectoire dans le plan factoriel, composition des classes.
+- **Qualité des données** (onglet Profil) : doublons exacts, identifiants répétés, colonnes vides ou constantes, nombres mêlés de texte ; actions directes (retirer les doublons, exporter les lignes, changer le type).
+
+### Grands volumes
+
+- Lecture des fichiers **Parquet** (groupe de lignes par groupe de lignes, ouverts d'office au-delà de 400 000 lignes) et **Excel**, dans le fil de calcul.
+- **Lasso** sur la carte de densité ; une zone par plan factoriel, combinables.
+- **Relief 3D** de la densité.
+- **Type des colonnes** modifiable à la main, puis relecture du fichier.
+- **Annuler / rétablir** les filtres.
+- Correction : un identifiant numérique séquentiel de plus de 1 000 lignes entrait dans l'ACP.
+- Dates Excel lues en texte ISO, sans décalage de fuseau horaire (aussi dans le Studio).
+
+### Confort
+
+- **Écran d'accueil** : essayer un exemple, ouvrir son fichier, ouvrir un grand fichier.
+- **Aide « ? »** sur chaque graphique : ce qu'il montre, comment le lire, le piège à éviter.
+- **Lien de partage** d'une vue : méthode, variables, réglages, onglet, sélection et filtres.
+- **Annuler / rétablir** dans le Studio (Ctrl + Z, Ctrl + Maj + Z).
+- **Export PDF** direct du rapport.
+- **Version anglaise** de l'interface (bouton EN) ; les phrases d'interprétation générées restent en français.
+- **Téléphone** : en-tête compact, réglages dans un panneau, barre d'accès rapide, onglets collés en haut.
+
+### Exactitude
+
+- 78 tests internes, 146 cas limites, 28 contrôles du mode grands volumes, 49 comparaisons avec numpy, scipy et scikit-learn (AFDM, AUC, test de Welch, V de Cramér, χ² compris).
+
 ## 4.0.0 — 28 septembre 2026
 
 ### Grands volumes

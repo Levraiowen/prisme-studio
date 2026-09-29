@@ -9,10 +9,22 @@ Tous les calculs sont écrits dans le projet, en JavaScript, sans bibliothèque 
 | ACP normée | Corrélations accumulées ligne par ligne (le tableau centré-réduit n'est jamais stocké), diagonalisation de Jacobi. Coordonnées, cos², contributions ; variables et individus supplémentaires | Lebart, Morineau & Piron (1995) |
 | ACM | Tableau de Burt creux, jamais de tableau disjonctif complet : (S'S)ₐᵦ = (Bₐᵦ / nK² − cₐcᵦ) / √(cₐcᵦ). Rapports de corrélation η² | Benzécri (1973) ; Greenacre (2017) |
 | AFC | Décomposition de la matrice des résidus standardisés ; test du χ² d'indépendance | Benzécri (1973) |
+| AFDM | Quantitatives centrées-réduites et indicatrices pondérées par 1/√pₖ dans une seule matrice Z'Z/n, accumulée en une passe. λ = Σ r² + Σ η² ; Σλ = P + M − K ; règle λ ≥ 1 (valeur propre moyenne). Modalités au barycentre des individus | Escofier (1979) ; Pagès (2004, 2014) |
 | Nombre d'axes | Règle de Kaiser (ACP) ou seuil 1/K (ACM), coude, analyse parallèle de Horn | Horn (1965) |
 | Stabilité des axes | Bootstrap des individus, réalignement de chaque réplique sur la solution de référence par rotation de Procrustes | Efron & Tibshirani (1993) ; Bickel, Götze & van Zwet (1997) pour le « m parmi n » |
 | Qualité du modèle | T² de Hotelling (limite (n−1)²/n · Bêta⁻¹) et Q, écart au sous-espace (limite par l'approximation de Box) | Jackson & Mudholkar (1979) |
 | Valeurs manquantes | Suppression, moyenne, ou ACP itérative régularisée (seules les cellules manquantes changent ; arrêt à 10⁻¹⁰) | Josse & Husson (2012, 2016) |
+
+## Mode supervisé, comparaison, dates, qualité
+
+| Élément | Calcul | Référence |
+| --- | --- | --- |
+| Importance d'une variable (cible binaire) | Valeur d'information IV = Σ (pₖ⁺ − pₖ⁻) ln(pₖ⁺ / pₖ⁻) sur des déciles (quantitatives) ou des modalités ; AUC de Mann-Whitney. Repères de Siddiqi : < 0,02 inutile, 0,1 moyen, 0,3 fort | Siddiqi (2006) ; Hanley & McNeil (1982) |
+| Fuites de données | AUC ≥ 0,95 (ou IV ≥ 2 sans AUC) : variable signalée et écartée de l'arbre | — |
+| Arbre de décision | CART : Gini (cible binaire) ou variance (cible numérique), 32 coupures candidates par quantiles, modalités ordonnées par taux ; appris sur 100 000 lignes au plus, feuilles recalculées sur toutes | Breiman et al. (1984) |
+| Comparaison de deux groupes | d de Cohen (écart-type combiné), test de Welch (loi de Student, fonction bêta incomplète) ; V de Cramér et test du χ² pour les qualitatives | Cohen (1988) ; Welch (1947) ; Cramér (1946) |
+| Dates | Formats ISO, jj/mm/aaaa, aaaa/mm/jj, aaaa-mm ; dates impossibles refusées (31/02) ; variables dérivées : année, mois écoulés, trimestre, mois, jour de la semaine, ancienneté | — |
+| Doublons | Empreinte de 53 bits par ligne (deux accumulateurs mélangés) ; effectif exact vérifié face au comptage par chaînes | — |
 
 ## Classification
 
@@ -62,11 +74,11 @@ La dernière colonne donne l'écart maximal mesuré face à numpy et scipy (`tes
 
 ## Validation
 
-- **Tests internes** (`node tests/run_tests.mjs`) : **53 tests**.
+- **Tests internes** (`node tests/run_tests.mjs`) : **78 tests**.
   - Identités exactes : Σλ = p, Σλ ACM = M/K − 1, moyennes de T² et de Q, Σ des gains de Ward = inertie totale, Φ⁻¹(Φ(z)) = z.
   - Valeurs publiées du rapport.
   - Cas construits : relation en U, bimodalité, atypiques.
-- **Contre-vérification indépendante** (`python tests/crosscheck.py`) : **38 comparaisons** avec numpy, scipy et scikit-learn.
+- **Contre-vérification indépendante** (`python tests/crosscheck.py`) : **49 comparaisons** avec numpy, scipy et scikit-learn.
   - Les écarts mesurés vont de 0 à 3·10⁻¹³.
   - Seule exception : le point fixe de l'imputation, à 5·10⁻⁶, qui correspond à l'arrêt d'un algorithme itératif.
 
@@ -79,18 +91,28 @@ La dernière colonne donne l'écart maximal mesuré face à numpy et scipy (`tes
   - les queues hypergéométriques ;
   - la fiabilité et la continuité ;
   - les valeurs-tests des individus supplémentaires ;
-  - le point fixe de l'imputation.
+  - le point fixe de l'imputation ;
+  - l'AFDM (valeurs propres, coordonnées, barycentres des modalités) ;
+  - l'AUC (scikit-learn), le test de Welch, le V de Cramér et le test du χ² de la comparaison de groupes.
+- **Cas limites** (`node tests/robustness.mjs`) : **146 cas** (tableaux vides, constants, colinéaires, unicode, valeurs extrêmes…), chaque colonne essayée comme cible.
+- **Mode grands volumes** (`node tests/bench_big.mjs`) : **28 contrôles**, dont le lasso comparé point par point à PNPOLY et la lecture en colonnes (Parquet) comparée à la lecture CSV.
 - **Banc de charge** (`node tests/bench.mjs 100000 20`) : il vérifie aussi Σλ ACM = M/K − 1 sur 100 000 lignes.
 
 ## Ce que l'outil ne fait pas
 
 - **Pas d'inférence causale** : les insights décrivent des associations.
-- **Pas de modèle prédictif** : la « prévision » d'un nouvel individu est sa projection sur les axes, pas une régression.
+- **Un seul modèle prédictif, volontairement simple** : l'arbre de décision de l'onglet Cible est appris sur toutes les données présentes, sans échantillon de validation. Il décrit ; il faut le valider sur d'autres données avant de s'en servir pour décider. La « prévision » d'un nouvel individu dans le Simulateur reste une projection sur les axes.
 - **Méthodes échantillonnées au-delà d'une taille donnée** : l'échantillonnage est signalé à l'écran (voir [PERFORMANCES.md](PERFORMANCES.md)). Les grandeurs qui décrivent les données (axes, coordonnées, valeurs-tests) restent exactes sur toutes les lignes.
 
 ## Références
 
 - Asimov, D. (1985). The Grand Tour. *SIAM J. Sci. Stat. Comput.* 6(1).
+- Breiman, L., Friedman, J., Olshen, R. & Stone, C. (1984). *Classification and Regression Trees*. Wadsworth.
+- Cohen, J. (1988). *Statistical Power Analysis for the Behavioral Sciences*, 2ᵉ éd. Erlbaum.
+- Cramér, H. (1946). *Mathematical Methods of Statistics*. Princeton.
+- Escofier, B. (1979). Traitement simultané de variables qualitatives et quantitatives en analyse factorielle. *Cahiers de l'analyse des données* 4(2).
+- Franklin, W. R. (1970, publié en ligne). PNPOLY : point inclusion in polygon test.
+- Hanley, J. A. & McNeil, B. J. (1982). The meaning and use of the area under a ROC curve. *Radiology* 143.
 - Benzécri, J.-P. (1973). *L'analyse des données*. Dunod.
 - Bertin, J. (1967). *Sémiologie graphique*. Mouton.
 - Bickel, P., Götze, F. & van Zwet, W. (1997). Resampling fewer than n observations. *Statistica Sinica* 7.
@@ -106,8 +128,11 @@ La dernière colonne donne l'écart maximal mesuré face à numpy et scipy (`tes
 - Lebart, L., Morineau, A. & Piron, M. (1995). *Statistique exploratoire multidimensionnelle*. Dunod.
 - Mason, H., Lee, S., Laa, U. & Cook, D. (2022). cassowaryr: compute scagnostics on pairs of numeric variables. *R Journal* 14.
 - McInnes, L., Healy, J. & Melville, J. (2018). UMAP. arXiv:1802.03426.
+- Pagès, J. (2004). Analyse factorielle de données mixtes. *Revue de statistique appliquée* 52(4) ; (2014) *Multiple Factor Analysis by Example Using R*. CRC Press.
 - Murtagh, F. & Contreras, P. (2012). Algorithms for hierarchical clustering: an overview. *WIREs DMKD* 2.
 - Rousseeuw, P. J. (1987). Silhouettes. *J. Comput. Appl. Math.* 20.
+- Siddiqi, N. (2006). *Credit Risk Scorecards*. Wiley.
+- Welch, B. L. (1947). The generalization of « Student's » problem when several different population variances are involved. *Biometrika* 34.
 - Székely, G., Rizzo, M. & Bakirov, N. (2007). Measuring and testing dependence by correlation of distances. *Ann. Statist.* 35.
 - van der Maaten, L. & Hinton, G. (2008). Visualizing data using t-SNE. *JMLR* 9.
 - Venna, J. & Kaski, S. (2001). Neighborhood preservation in nonlinear projection methods. *ICANN*.
@@ -123,6 +148,9 @@ La dernière colonne donne l'écart maximal mesuré face à numpy et scipy (`tes
 | Filtrage croisé | Filtres combinés (rectangle, intervalles, modalités, classes, atypiques) recalculés sur toutes les lignes | imMens (Liu, Jiang & Heer, 2013) ; Falcon (Moritz, Howe & Heer, 2019) |
 | Description d'une sélection | Taille d'effet (écart des moyennes en écarts-types), valeur-test indiquée | Cohen (1988) |
 | Échantillons | Sélection séquentielle uniforme (algorithme S), reproductible | Knuth, *TAOCP* vol. 2 |
+| Lecture Parquet et Excel | Parquet lu groupe de lignes par groupe de lignes (bibliothèque hyparquet) ; Excel converti en CSV (SheetJS), dates en texte ISO | — |
+| Lasso | Règle pair-impair, arêtes rangées par bandes horizontales : chaque point n'est comparé qu'aux arêtes de sa bande ; résultat identique à PNPOLY | Franklin (PNPOLY) |
+| Relief 3D | Effectifs par case lissés (trois flous en boîte, rayon choisi pour que le bruit de Poisson reste sous 5 %), même intensité que la carte | — |
 | Valeurs propres au-delà de 32 variables | Householder puis QL implicite (tred2 / tql2), résidu de l'ordre de 10⁻¹⁵ | Wilkinson & Reinsch (1971) ; JAMA |
 
 Avec des millions de lignes, presque toute différence est statistiquement significative. Les sélections sont donc classées par taille d'effet et non par p-valeur.

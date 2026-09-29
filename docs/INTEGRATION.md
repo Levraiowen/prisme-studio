@@ -5,10 +5,13 @@
 | Paramètre | Effet | Exemple |
 | --- | --- | --- |
 | `data` | Charge un fichier (CSV, TSV, JSON, Excel, Parquet) | `?data=/data/clients.parquet` |
-| `method` | Force la méthode (`ACP`, `ACM`, `AFC`) | `&method=ACM` |
+| `method` | Force la méthode (`ACP`, `ACM`, `AFC`, `AFDM`) | `&method=ACM` |
+| `ex` | Ouvre un exemple (`ecommerce`, `luxe`, `clients`, `ventes`) | `?ex=luxe` |
+| `view` | Vue partagée (bouton « Partager ») : méthode, variables, réglages, onglet, sélection, filtres du mode grands volumes, encodés en base64url | `&view=eyJtIjoi…` |
+| `lang` | `en` : interface en anglais | `&lang=en` |
 | `tab` | Ouvre un onglet (`insights`, `classes`, `projections`, `matrices`, `hyper`, `profil`…) | `&tab=insights` |
 | `theme` | `dark` ou `light` | `&theme=light` |
-| `mode` | `big` : ouvre le fichier `data` en mode grands volumes (CSV de plusieurs millions de lignes) | `?data=/data/transactions.csv&mode=big` |
+| `mode` | `big` : ouvre le fichier `data` en mode grands volumes (CSV, Parquet ou Excel de plusieurs millions de lignes) | `?data=/data/transactions.parquet&mode=big` |
 
 ## API JavaScript (même page)
 

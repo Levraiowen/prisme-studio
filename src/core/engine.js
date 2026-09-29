@@ -87,9 +87,11 @@ EXEMPLES.clients.csv = (() => {   // 4 profils de clientele, reponse typique ave
 /* ------------------------------------------------------------------ utilitaires */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const fr = (x, d = 2) => { x = +x; if (!isFinite(x)) return "—"; if (Math.abs(x) < 0.5 * 10 ** -d) x = 0; return x.toFixed(d).replace(".", ",").replace("-", "−"); };
+// separateur decimal et signe pour cent : francais par defaut, anglais dans la version anglaise de l'interface
+const NUMFMT = { dec: ",", pct: " %" };
+const fr = (x, d = 2) => { x = +x; if (!isFinite(x)) return "—"; if (Math.abs(x) < 0.5 * 10 ** -d) x = 0; return x.toFixed(d).replace(".", NUMFMT.dec).replace("-", "−"); };
 const frs = (x, d = 2) => (+(+x).toFixed(d) > 0 ? "+" : "") + fr(x, d);
-const pc = (x, d = 1) => fr(x, d) + " %";
+const pc = (x, d = 1) => fr(x, d) + NUMFMT.pct;
 const pl = (n, s, p) => `${n} ${n <= 1 ? s : (p || s + "s")}`;
 const liste = (a, maxi = 4, total = null) => { a = [...a]; if (!a.length) return "aucune"; const N = total ?? a.length; if (N > maxi) { const r = N - Math.min(maxi, a.length); return a.slice(0, maxi).join(", ") + ` et ${r} ${r === 1 ? "autre" : "autres"}`; } return a.length === 1 ? a[0] : a.slice(0, -1).join(", ") + " et " + a.at(-1); };
 const sci = x => { if (!isFinite(x) || x === 0) return "0"; const e = Math.floor(Math.log10(Math.abs(x))), m = x / 10 ** e; return `${fr(m, 1)}·10${String(e).split("").map(c => "⁰¹²³⁴⁵⁶⁷⁸⁹"[+c] ?? (c === "-" ? "⁻" : c)).join("")}`; };
@@ -105,7 +107,7 @@ const maxOf = (...parts) => { let m = -Infinity; for (const p of parts) { if (p 
 const minOf = (...parts) => { let m = Infinity; for (const p of parts) { if (p != null && typeof p === "object") { for (let i = 0; i < p.length; i++) if (p[i] < m) m = p[i]; } else if (p < m) m = p; } return m; };
 const cumsum = a => { let s = 0; return a.map(x => (s += x)); };
 const isDark = () => document.documentElement.dataset.theme === "dark" || (document.documentElement.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
-function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2600); }
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), Math.max(2600, String(msg).length * 55)); }
 function mulberry(seed) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 function gauss(rnd) { let u = 0; while (u === 0) u = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rnd()); }
 function niceStep(x) { const e = 10 ** Math.floor(Math.log10(x)), f = x / e; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * e; }

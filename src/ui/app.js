@@ -21,7 +21,7 @@ function loadTable(table, source, exampleKey = null) {
   if (typeof BigUI !== "undefined" && BigUI.open_) BigUI.show(false);
   state.table = table; state.types = detect(table); state.source = source; state.example = exampleKey; state.axisNames = {}; state.enc = { color: "groups", size: "uniform" };
   state.prep = { missing: "drop", tr: {} }; state.supp = { quanti: [], quali: [] }; state.groups = []; state.calVar = null; state.mat = {}; state.hcOpts = { k: null, dims: null, consol: true }; Sel.clear(true); Drawer.close?.();
-  state.target = null; state.tgt = null; state.tgtSel = null; state.cmp = null; state.time = null; state.timeCache = null; state.quality = null;
+  state.target = null; state.tgt = null; state.tgtSel = null; state.cmp = null; state.time = null; state.timeCache = null; state.quality = null; state.dataURL = null; Hist.reset();
   const [m, why] = suggest(table, state.types); state.method = m; state.why = why; state.params = defaultParams(m);
   renderRail(); run("project");
 }
@@ -41,7 +41,7 @@ function run(mode = "morph") {
   state.labo = null; state.sim = null; Stage.setGhost(null); if (Tour.active) Tour.stop(); renderEnc();
   Stage.build(state.res, mode); renderHeader(); renderKPIs(); renderPanel(); UI.fiche(null); renderSelBar();
   clearTimeout(run.ins); run.ins = setTimeout(() => Studio.computeInsights(), mode === "project" ? 1800 : 600);
-  PrismeAPI.emit("result", PrismeAPI.summary());
+  PrismeAPI.emit("result", PrismeAPI.summary()); Hist.touch();
 }
 
 /* ------------------------------------------------------------------ en-tete, indicateurs */
@@ -313,7 +313,7 @@ function reportModel(r) {
   secs.push({ t: "Ce qu'on retient", b: [{ ul: it.map(x => axisPhrase(r, x)) }, { p: "<b>Limites</b>" }, { ul: lim }] });
   return secs;
 }
-function reportHTML(r, forExport) {
+function reportHTML(r, forExport, forPrint = false) {
   const secs = reportModel(r), title = `Rapport ${r.method} : ${state.example ? EXEMPLES[state.example].label : state.source.replace(/\.[^.]+$/, "")}`;
   const names = { AFDM: "Analyse factorielle de données mixtes", ACP: "Analyse en composantes principales", ACM: "Analyse des correspondances multiples", AFC: "Analyse factorielle des correspondances" };
   const body = secs.map(s => `<h2>${esc(s.t)}</h2>` + s.b.map(b => b.p ? `<p>${b.p}</p>` : b.ul ? `<ul>${b.ul.map(x => `<li>${x}</li>`).join("")}</ul>` : b.h3 ? `<h3>${b.h3}</h3>` : b.kp ? `<div class="kp">${b.kp.map(([l, v]) => `<div><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("")}</div>`
@@ -321,12 +321,12 @@ function reportHTML(r, forExport) {
     : b.svg ? `<div class="fig">${b.svg}${b.cap ? `<div class="cap">${b.cap}</div>` : ""}</div>` : "").join("")).join("");
   const head = `<div class="eyebrow">${names[r.method]} · Prisme</div><h1>${esc(title)}</h1><div class="meta">${new Date().toLocaleDateString("fr-FR")} · Données : ${esc(state.source)}</div>`;
   if (!forExport) return head + body;
-  const css = `body{margin:0;background:#fff;color:#1B2030;font:15px/1.6 "Instrument Sans","Segoe UI",Arial,sans-serif}main{max-width:900px;margin:0 auto;padding:48px 28px 72px}.eyebrow{font:600 11px/1 "Instrument Sans",sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#8A6634}h1{font:600 32px/1.15 Unbounded,"Segoe UI",sans-serif;margin:10px 0 6px;color:#0D1222}h2{font:600 20px/1.25 Unbounded,"Segoe UI",sans-serif;margin:36px 0 10px;padding-top:14px;border-top:1px solid #E6E1D6;color:#0D1222}h3{font-size:15px;margin:20px 0 6px;color:#0D1222}.meta{color:#6B7185;font-size:13px}table{border-collapse:collapse;width:100%;font-size:12.5px;margin:10px 0 4px}th{background:#F6F2EA;text-align:left}th,td{border:1px solid #E6E1D6;padding:5px 8px;vertical-align:top}.cap{font-size:12px;color:#6B7185;font-style:italic}.fig{margin:14px 0;break-inside:avoid}.fig svg{max-width:100%;height:auto}.kp{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}.kp div{flex:1 1 140px;border:1px solid #E6E1D6;border-radius:10px;padding:10px 12px;background:#FBF8F2}.kp b{display:block;font:500 22px/1.1 Unbounded,"Segoe UI",sans-serif}.kp span{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6B7185}footer{margin-top:40px;color:#6B7185;font-size:12px}@media print{h2{break-before:page}}`;
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600&family=JetBrains+Mono&family=Unbounded:wght@500;600&display=swap"><style>${css}</style></head><body><main>${head}${body}<footer>Rapport généré par Prisme. Pour un PDF : ouvrez ce fichier dans un navigateur, puis Ctrl + P et « Enregistrer au format PDF ».</footer></main></body></html>`;
+  const css = `body{margin:0;background:#fff;color:#1B2030;font:15px/1.6 "Instrument Sans","Segoe UI",Arial,sans-serif}main{max-width:900px;margin:0 auto;padding:48px 28px 72px}.eyebrow{font:600 11px/1 "Instrument Sans",sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#8A6634}h1{font:600 32px/1.15 Unbounded,"Segoe UI",sans-serif;margin:10px 0 6px;color:#0D1222}h2{font:600 20px/1.25 Unbounded,"Segoe UI",sans-serif;margin:36px 0 10px;padding-top:14px;border-top:1px solid #E6E1D6;color:#0D1222}h3{font-size:15px;margin:20px 0 6px;color:#0D1222}.meta{color:#6B7185;font-size:13px}table{border-collapse:collapse;width:100%;font-size:12.5px;margin:10px 0 4px}th{background:#F6F2EA;text-align:left}th,td{border:1px solid #E6E1D6;padding:5px 8px;vertical-align:top}.cap{font-size:12px;color:#6B7185;font-style:italic}.fig{margin:14px 0;break-inside:avoid}.fig svg{max-width:100%;height:auto}.kp{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}.kp div{flex:1 1 140px;border:1px solid #E6E1D6;border-radius:10px;padding:10px 12px;background:#FBF8F2}.kp b{display:block;font:500 22px/1.1 Unbounded,"Segoe UI",sans-serif}.kp span{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6B7185}footer{margin-top:40px;color:#6B7185;font-size:12px}@media print{h2{break-before:page}}${forPrint ? "@page{size:A4;margin:14mm 12mm}@media print{main{padding:0;max-width:none}h1{margin-top:0}table,.kp,.fig,tr{break-inside:avoid}h2,h3{break-after:avoid}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}" : ""}`;
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600&family=JetBrains+Mono&family=Unbounded:wght@500;600&display=swap"><style>${css}</style></head><body><main>${head}${body}<footer>${forPrint ? "Rapport généré par Prisme Studio." : "Rapport généré par Prisme. Pour un PDF : ouvrez ce fichier dans un navigateur, puis Ctrl + P et « Enregistrer au format PDF »."}</footer></main></body></html>`;
 }
 function pRapport(r) {
-  return `<div class="paper-wrap"><div class="paper-actions"><button class="btn prime" type="button" data-act="export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"/></svg>Télécharger le rapport (HTML)</button>
-    <button class="btn" type="button" data-act="csv">Coordonnées (CSV)</button><button class="btn" type="button" data-act="json" title="Valeurs propres, coordonnées, contributions, classes et insights, pour un pipeline de données">Résultats (JSON)</button><button class="btn" type="button" data-act="png">Vue 3D (PNG)</button><button class="btn" type="button" data-act="copy">Copier le texte</button><span class="muted" style="font-size:12.5px">Le HTML s'ouvre dans un navigateur ; Ctrl + P pour l'enregistrer en PDF.</span></div>
+  return `<div class="paper-wrap"><div class="paper-actions"><button class="btn prime" type="button" data-act="pdf" title="Ouvre l'impression : choisissez « Enregistrer au format PDF »"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"/></svg>Exporter en PDF</button><button class="btn" type="button" data-act="export">Rapport (HTML)</button>
+    <button class="btn" type="button" data-act="csv">Coordonnées (CSV)</button><button class="btn" type="button" data-act="json" title="Valeurs propres, coordonnées, contributions, classes et insights, pour un pipeline de données">Résultats (JSON)</button><button class="btn" type="button" data-act="png">Vue 3D (PNG)</button><button class="btn" type="button" data-act="copy">Copier le texte</button><span class="muted" style="font-size:12.5px">PDF : la fenêtre d'impression s'ouvre, choisissez « Enregistrer au format PDF ».</span></div>
     <article class="paper" id="paper">${reportHTML(r, false)}</article></div>`;
 }
 let downloadsNS;
@@ -396,7 +396,9 @@ const Palette = {
     const r = state.res, C = [];
     [["3d", "Vue 3D", "1"], ["12", "Vue plan 1·2", "2"], ["13", "Vue plan 1·3", "3"], ["23", "Vue plan 2·3", "4"]].forEach(([v, l, k]) => C.push({ l, k, g: "Vue", run: () => Stage.setView(v) }));
     [["cible", "Cible : ce qui explique une variable (arbre de décision)"], ["comparer", "Comparer deux groupes"], ["temps", "Temps : évolution par période"], ["synthese", "Synthèse"], ["axes", "Axes"], ["variables", "Variables"], ["individus", "Individus"], ["insights", "Insights automatiques"], ["projections", "Projections : ACP, t-SNE, UMAP"], ["classes", "Classes (HCPC)"], ["matrices", "Matrices : scagnostics et Bertin"], ["profil", "Profil des données"], ["simulateur", "Simulateur d'individu"], ["labo", "Labo : bootstrap, Horn, k-means"], ["hyper", "Hyperespace : coordonnées parallèles, flux, réseau, Shepard"], ["rapport", "Rapport"]].forEach(([t, l]) => C.push({ l: "Ouvrir " + l, g: "Onglet", run: () => { state.tab = t; renderPanel(); $("#tabs").scrollIntoView({ behavior: reduced ? "auto" : "smooth" }); } }));
-    ["ACP", "ACM", "AFC"].forEach(m => C.push({ l: "Méthode " + m, g: "Analyse", run: () => setMethod(m) }));
+    ["ACP", "ACM", "AFC", "AFDM"].forEach(m => C.push({ l: "Méthode " + m, g: "Analyse", run: () => setMethod(m) }));
+    C.push({ l: "Annuler la dernière action", k: "Ctrl Z", g: "Historique", big: true, run: () => Hist.doUndo() }, { l: "Rétablir l'action annulée", k: "Ctrl Maj Z", g: "Historique", big: true, run: () => Hist.doRedo() }, { l: "Copier le lien de cette vue", g: "Partager", big: true, run: () => Share.copy() },
+      { l: "Exporter le rapport en PDF", g: "Export", run: () => Pdf.print(r) }, { l: "Écran d'accueil", g: "Aide", big: true, run: () => Welcome.show() }, { l: I18N.lang === "en" ? "Passer en français" : "Switch to English", g: "Affichage", big: true, run: () => I18N.set(I18N.lang === "en" ? "fr" : "en") });
     Object.entries(EXEMPLES).forEach(([k, e]) => C.push({ l: `Charger l'exemple « ${e.label} »`, g: "Données", run: () => loadTable(parseCSV(e.csv, e.file), e.file, k) }));
     C.push({ l: "Importer un fichier", g: "Données", run: () => $("#fileInput").click(), big: true });
     if (BigUI.s) C.push({ l: `Tableau de bord grands volumes (${fmtBig(BigUI.s.n)} lignes)`, g: "Données", big: true, run: () => { BigUI.show(true); requestAnimationFrame(() => BigUI.draw()); } });
@@ -438,7 +440,7 @@ function boot() {
 }
 
 /* ------------------------------------------------------------------ evenements */
-function setEnc(kind, v) { state.enc[kind] = v; if (kind === "color") state.colorMode = ["clusters", "hcpc", "user"].includes(v) ? v : "groups"; if (v === "hcpc") Studio.ensureHC(); renderEnc(); Stage.build(state.res, "morph"); renderHeader(); if (["individus", "hyper", "projections", "matrices", "classes"].includes(state.tab)) renderPanel(); }
+function setEnc(kind, v) { state.enc = { ...state.enc, [kind]: v }; Hist.touch(); if (kind === "color") state.colorMode = ["clusters", "hcpc", "user"].includes(v) ? v : "groups"; if (v === "hcpc") Studio.ensureHC(); renderEnc(); Stage.build(state.res, "morph"); renderHeader(); if (["individus", "hyper", "projections", "matrices", "classes"].includes(state.tab)) renderPanel(); }
 function toggleLasso() { const on = !Stage.lassoOn; Stage.setLasso(on); document.querySelector('[data-tool="lasso"]')?.setAttribute("aria-pressed", on); toast(on ? "Lasso actif : entourez des points dans la 3D (Échap pour quitter)." : "Lasso désactivé."); }
 function markSelRows() { document.querySelectorAll("#indTable tr[data-ind]").forEach(tr => tr.classList.toggle("insel", state.sel.has(+tr.dataset.ind))); }
 function saveProject() {
@@ -460,9 +462,10 @@ function bind() {
   $("#examples").addEventListener("click", e => { const b = e.target.closest("[data-ex]"); if (!b) return; const ex = EXEMPLES[b.dataset.ex]; loadTable(parseCSV(ex.csv, ex.file), ex.file, b.dataset.ex); });
   const fi = $("#fileInput"), drop = $("#drop");
   const take = async f => { if (!f) return;
-    if (bigKind(f.name) && ($("#bigForce").checked || await isBigFile(f))) { try { await BigUI.open({ file: f }); } catch (e) { $("#errBox").hidden = false; $("#errBox").textContent = e.message; } return; }
+    Welcome.close();
+    if (bigKind(f.name) && ($("#bigForce").checked || await isBigFile(f))) { try { await BigUI.open({ file: f, types: Share.pending?.b ? Share.pending.ty : undefined }); } catch (e) { $("#errBox").hidden = false; $("#errBox").textContent = e.message; } return; }
     if (f.size > BIG_THRESHOLD) toast("Fichier volumineux : cochez « Grands volumes » pour le lire en flux (plusieurs millions de lignes).");
-    try { setBusy(`lecture de ${f.name} (${fr(f.size / 1048576, 1)} Mo)`); await new Promise(r => setTimeout(r, 30)); const t0 = performance.now(), t = await readFile(f); setBusy("calcul de l'analyse"); await new Promise(r => setTimeout(r, 30)); loadTable(t, f.name, null); setBusy(null); toast(`${f.name} : ${t.rows.length.toLocaleString("fr-FR")} lignes × ${t.columns.length} colonnes, lues et analysées en ${fr((performance.now() - t0) / 1000, 1)} s`); } catch (e) { setBusy(null); $("#errBox").hidden = false; $("#errBox").textContent = e.message; } };
+    try { setBusy(`lecture de ${f.name} (${fr(f.size / 1048576, 1)} Mo)`); await new Promise(r => setTimeout(r, 30)); const t0 = performance.now(), t = await readFile(f); setBusy("calcul de l'analyse"); await new Promise(r => setTimeout(r, 30)); loadTable(t, f.name, null); setBusy(null); toast(`${f.name} : ${t.rows.length.toLocaleString("fr-FR")} lignes × ${t.columns.length} colonnes, lues et analysées en ${fr((performance.now() - t0) / 1000, 1)} s`); if (Share.pending && !Share.pending.b) Share.applyStudio(); } catch (e) { setBusy(null); $("#errBox").hidden = false; $("#errBox").textContent = e.message; } };
   $("#urlForm").addEventListener("submit", async e => { e.preventDefault(); const u = $("#urlIn").value.trim(); if (!u) return;
     if ($("#bigForce").checked || await isBigURL(u)) { try { await BigUI.open({ url: u, force: true }); } catch (err) { $("#errBox").hidden = false; $("#errBox").textContent = err.message; } return; }
     try { setBusy("chargement depuis l'URL"); await PrismeAPI.loadURL(u); setBusy(null); toast(`${state.source} chargé depuis l'URL.`); } catch (err) { setBusy(null); $("#errBox").hidden = false; $("#errBox").textContent = err.message + " (le serveur doit autoriser l'accès, en-tête CORS)."; } });
@@ -479,12 +482,12 @@ function bind() {
   $("#varsBox").addEventListener("change", e => { const k = e.target.dataset.p; if (!k) return; const v = e.target.value; state.params[k] = k === "nAxes" ? (v ? +v : null) : v || null; if (k === "rowName" || k === "colName") state.params[k] = v || (k === "rowName" ? "Lignes" : "Colonnes"); run(k === "nAxes" || k === "color" || k.endsWith("Name") ? "none" : "morph"); });
   $("#views").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (!b) return; if (b.dataset.v === "hyper") Stage.mode === "tour" ? Stage.exitHyper() : Stage.startHyper("tour"); else Stage.setView(b.dataset.v); });
   $("#encBox").addEventListener("change", e => { if (e.target.id === "encColor") setEnc("color", e.target.value); if (e.target.id === "encSize") setEnc("size", e.target.value); if (e.target.id === "calSel") { state.calVar = e.target.value || null; Stage.refreshCal(); renderHeader(); } });
-  bindSelection(); bindStudio(); bindAnalyses(); BigUI.bind();
+  bindSelection(); bindStudio(); bindAnalyses(); BigUI.bind(); bindComfort();
   $("#bigBack").onclick = () => { BigUI.show(true); requestAnimationFrame(() => BigUI.draw()); };
   document.addEventListener("prisme:sel", () => { if (state.tab === "hyper") Hyper.syncSel?.(); if (state.tab === "projections") ProjUI.redraw(); if (state.tab === "matrices") MatUI.redraw(); if (state.tab === "individus") markSelRows(); });
   document.addEventListener("click", e => { const g = e.target.closest("[data-goto]"); if (g) { e.preventDefault(); state.tab = g.dataset.goto; renderPanel(); $("#tabs").scrollIntoView({ behavior: reduced ? "auto" : "smooth" }); } });
   $("#projBtn").onclick = e => { e.stopPropagation(); $("#projMenu").hidden = !$("#projMenu").hidden; }; document.addEventListener("click", e => { if (!e.target.closest("#projMenu")) $("#projMenu").hidden = true; });
-  $("#projMenu").addEventListener("click", e => { const b = e.target.closest("[data-pm]"); if (!b) return; $("#projMenu").hidden = true; if (b.dataset.pm === "save") saveProject(); if (b.dataset.pm === "open") $("#projInput").click(); if (b.dataset.pm === "about") showAbout(); });
+  $("#projMenu").addEventListener("click", e => { const b = e.target.closest("[data-pm]"); if (!b) return; $("#projMenu").hidden = true; if (b.dataset.pm === "save") saveProject(); if (b.dataset.pm === "open") $("#projInput").click(); if (b.dataset.pm === "about") showAbout(); if (b.dataset.pm === "welcome") Welcome.show(); });
   $("#projInput").onchange = async () => { const f = $("#projInput").files[0]; $("#projInput").value = ""; if (f) openProject(await f.text(), f.name); };
   $("#about").addEventListener("click", e => { if (e.target.id === "about" || e.target.closest(".ab-x")) $("#about").hidden = true; });
   document.querySelector(".tools").addEventListener("click", e => { const b = e.target.closest("[data-tool]"); if (!b) return; const t = b.dataset.tool;
@@ -500,6 +503,7 @@ function bind() {
     const kb = e.target.closest("[data-k]"); if (kb && state.labo) { state.labo.k = +kb.dataset.k; if (state.colorMode === "clusters") Labo.applyClusters(true); else renderPanel(); return; }
     const a = e.target.closest("[data-act]"); if (!a) return; const r = state.res, base = (state.example ? EXEMPLES[state.example].file : state.source).replace(/\.[^.]+$/, "");
     if (a.dataset.act === "export") saveFile(`rapport_${r.method}_${base}.html`, reportHTML(r, true));
+    if (a.dataset.act === "pdf") Pdf.print(r);
     if (a.dataset.act === "csv") saveFile(`coordonnees_${r.method}_${base}.csv`, exportCSV(r));
     if (a.dataset.act === "more") { state.indLimit = (state.indLimit || 300) + 300; renderPanel(); return; }
     if (a.dataset.act === "json") saveFile(`resultats_${r.method}_${base}.json`, JSON.stringify(resultsJSON(r), null, 1));
@@ -530,7 +534,8 @@ function bind() {
   });
   document.addEventListener("keydown", e => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); $("#palette").hidden ? Palette.open() : Palette.close(); return; }
-    if (BigUI.open_ && (e.ctrlKey || e.metaKey) && !e.target.closest?.("input, select, textarea") && (e.key.toLowerCase() === "z" || e.key.toLowerCase() === "y")) { e.preventDefault(); return e.key.toLowerCase() === "y" || e.shiftKey ? BigUI.redo() : BigUI.undo(); }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.target.closest?.("input, select, textarea") && (e.key.toLowerCase() === "z" || e.key.toLowerCase() === "y")) { e.preventDefault(); return e.key.toLowerCase() === "y" || e.shiftKey ? Hist.doRedo() : Hist.doUndo(); }
+    if (e.key === "Escape" && Welcome.open) return Welcome.close();
     if (BigUI.open_) { if (e.key === "Escape") { if (!$("#palette").hidden) Palette.close(); else if (!$("#about").hidden) $("#about").hidden = true; else if (BigUI.filters.length) { BigUI.pushHist(); BigUI.filters = []; BigUI.applyFilters(); } } return; }
     if (e.key === "Escape") { if (!$("#palette").hidden) return Palette.close(); if (!$("#about").hidden) return ($("#about").hidden = true); if (Drawer.kind) return Drawer.close(); if (Tour.active) return Tour.stop(); if (Stage.mode !== "normal") return Stage.exitHyper(); if (Stage.lassoOn) return toggleLasso(); if (state.sel.size) return Sel.clear(); if (!$("#fiche").hidden) { $("#fiche").hidden = true; Stage.select(-1); } return; }
     if (e.target.closest?.("input, select, textarea") || e.ctrlKey || e.metaKey || e.altKey || !$("#palette").hidden) return;
@@ -554,13 +559,18 @@ function bind() {
 /* ------------------------------------------------------------------ demarrage */
 try { const th = localStorage.getItem("prisme-theme"); if (th) document.documentElement.dataset.theme = th; } catch (e) {}
 const TABS = ["synthese", "axes", "variables", "individus", "insights", "projections", "classes", "matrices", "hyper", "cible", "comparer", "temps", "profil", "simulateur", "labo", "rapport"];
+{ let lg = null; try { lg = localStorage.getItem("prisme-lang"); } catch (e) {} const q = new URLSearchParams(location.search).get("lang"); if (q === "en" || q === "fr") lg = q; if (lg === "en") I18N.set("en", true); }
 bind(); bindAPI(); Stage.init();
 { const h = location.hash.slice(1); if (TABS.includes(h)) state.tab = h; }
 (async () => {
-  const fromURL = await startFromURL(); if (!TABS.includes(state.tab)) state.tab = "synthese";
+  const shared = !!Share.fromURL(), qs = new URLSearchParams(location.search), fromURL = await startFromURL(); if (!TABS.includes(state.tab)) state.tab = "synthese";
   if (fromURL !== true) loadTable(parseCSV(EXEMPLES.ecommerce.csv, EXEMPLES.ecommerce.file), EXEMPLES.ecommerce.file, "ecommerce");
   else renderPanel();
-  if (fromURL && fromURL.big) BigUI.open({ url: fromURL.big, force: true }).catch(e => toast(e.message));
+  // vue partagee : appliquee aux donnees du lien ; fichier local : elle attend que la personne l'ouvre
+  if (Share.pending && !Share.pending.b && fromURL === true) Share.applyStudio(); else if (Share.pending && !(fromURL && fromURL.big)) Share.hintLocal();
+  if (fromURL && fromURL.big) BigUI.open({ url: fromURL.big, force: true, types: Share.pending?.ty }).catch(e => toast(e.message));
+  else if (!shared && !qs.get("data") && !qs.get("ex") && !embedded()) Welcome.auto();
+  I18N.apply(); Hist.ui();
   $("#verTag").textContent = "v" + PRISME_VERSION; boot();
   // version deployee (site) : application installable et utilisable hors ligne (seuls le code et les bibliotheques sont mis en cache, jamais les donnees)
   if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol) && document.querySelector('link[rel="manifest"]')) navigator.serviceWorker.register("sw.js").catch(() => {});

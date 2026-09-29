@@ -17,7 +17,7 @@ const BIG_MAIN = `self.onmessage = e => bigHandle(e.data, (m, tr) => self.postMe
 const hexRGB = h => { h = String(h || "#888").trim(); if (h.startsWith("rgb")) return (h.match(/[\d.]+/g) || [128, 128, 128]).slice(0, 3).map(Number); const x = h.replace("#", ""), f = x.length === 3 ? x.split("").map(c => c + c).join("") : x; return [0, 2, 4].map(i => parseInt(f.slice(i, i + 2), 16) || 0); };
 const fmtInt = n => Math.round(n).toLocaleString("fr-FR");
 const fmtBig = n => (n >= 1e6 ? fr(n / 1e6, n >= 1e7 ? 1 : 2) + " M" : fmtInt(n));
-const fmtBytes = b => (b >= 1073741824 ? fr(b / 1073741824, 2) + " Go" : b >= 1048576 ? fr(b / 1048576, 0) + " Mo" : fr(b / 1024, 0) + " Ko");
+const fmtBytes = b => { const [G, M, K] = NUMFMT.dec === "." ? ["GB", "MB", "kB"] : ["Go", "Mo", "Ko"]; return b >= 1073741824 ? fr(b / 1073741824, 2) + " " + G : b >= 1048576 ? fr(b / 1048576, 0) + " " + M : fr(b / 1024, 0) + " " + K; };
 const fmtMs = ms => (ms >= 1000 ? fr(ms / 1000, 1) + " s" : fr(ms, 0) + " ms");
 
 const BigUI = {
@@ -37,7 +37,7 @@ const BigUI = {
   onMsg(m) { const p = this.pend.get(m.id); if (!p) return; if (m.type) { p.onEvt?.(m); return; } this.pend.delete(m.id); m.ok ? p.res(m.out) : p.rej(new Error(m.err)); },
   kill() { if (this.w) this.w.kill(); this.w = null; this.pend.forEach(p => p.rej(new Error("annulé"))); this.pend.clear(); },
   /* ---------- entree / sortie du mode */
-  show(on) { this.open_ = on; document.body.classList.toggle("bigmode", on); $("#big").hidden = !on;
+  show(on) { this.open_ = on; document.body.classList.toggle("bigmode", on); $("#big").hidden = !on; Hist.ui();
     if (on) { $("#dsName").textContent = this.name; $("#dsDim").innerHTML = this.s ? `· ${fmtInt(this.s.n)} × ${this.s.num.length + this.s.cat.length} <span class="tag">grands volumes</span>` : "· lecture en cours"; } const bb = $("#bigBack"); if (bb) { bb.hidden = on || !this.s; if (this.s) bb.querySelector("b").textContent = fmtBig(this.s.n) + " lignes"; } },
   exit() { this.show(false); Relief.dispose(); if (state.res) renderHeader(); },
   async open(src) {
@@ -64,7 +64,7 @@ const BigUI = {
       this.s = out.summary; this.size = this.size || this.s.bytes; this.times.parse = performance.now() - t0;
       this.progress({ bytes: this.s.bytes, total: this.s.bytes, rows: this.s.n, ms: this.times.parse }, true);
       await this.runPCA(); this.renderDash(); this.show(true); PrismeAPI.emit("result", { method: "ACP", mode: "grands volumes", n: this.s.n, axes: this.acp.nAxes, inertiaPct: this.acp.cum[this.acp.nAxes - 1], source: this.name });
-      this.computeClasses();
+      this.computeClasses(); if (Share.pending?.b) Share.applyBig();
     } catch (e) { if (e.message !== "annulé") this.fail(e.message); }
   },
   fail(msg) { $("#big").innerHTML = `<div class="card bg-ingest"><div class="eyebrow">Mode grands volumes</div><h2>${esc(this.name)}</h2><div class="err">${esc(msg)}</div><div class="bg-row"><button class="btn sm" type="button" data-bg="leave">Revenir au Studio</button>${Object.keys(this.types).length ? `<button class="btn sm" type="button" data-bg="untype">Relire avec les types automatiques</button>` : ""}</div></div>`; },
@@ -105,7 +105,7 @@ const BigUI = {
           <button class="btn sm" type="button" data-bg="json">Résultats (JSON)</button><button class="btn sm" type="button" data-bg="png">Carte (PNG)</button></div>
       </div>
       <div class="bg-kpis">
-        ${[["Lignes", fmtBig(s.n), `lues en ${fmtMs(this.times.parse)} · ${fr(s.bytes / 1048576 / (this.times.parse / 1000), 0)} Mo/s`],
+        ${[["Lignes", fmtBig(s.n), `lues en ${fmtMs(this.times.parse)} · ${fr(s.bytes / 1048576 / (this.times.parse / 1000), 0)} ${NUMFMT.dec === "." ? "MB" : "Mo"}/s`],
            ["Colonnes", `${s.num.length} + ${s.cat.length}`, `nombres + qualitatives${ign.length ? ` · ${ign.length} ignorée${ign.length > 1 ? "s" : ""}` : ""}`],
            ["ACP exacte", pc(a.cum[a.nAxes - 1]), `${pl(a.nAxes, "axe")} · ${fmtInt(a.N)} lignes complètes · ${fmtMs(this.times.pca)}`],
            ["Atypiques", pc(a.nAny / a.N * 100), `au-delà des limites T² ou Q à 95 %`],
@@ -147,7 +147,7 @@ const BigUI = {
       <div class="planpick" title="Intensité : égalisation d'histogramme (Datashader), logarithme ou linéaire">${[["eq", "Égalisée"], ["log", "Log"], ["lin", "Linéaire"]].map(([k, l]) => `<button type="button" data-bgh="${k}" aria-pressed="${this.how === k}">${l}</button>`).join("")}</div>
       <div class="planpick" title="Carte de densité ou relief 3D (hauteur = nombre de lignes)">${[["map", "Carte"], ["relief", "Relief 3D"]].map(([k, l]) => `<button type="button" data-bgview="${k}" aria-pressed="${this.view === k}">${l}</button>`).join("")}</div>
       ${this.view === "map" ? `<div class="planpick" title="Sélection sur la carte : rectangle ou lasso (tracé libre)">${[["rect", "Rectangle"], ["lasso", "Lasso"]].map(([k, l]) => `<button type="button" data-bgbrush="${k}" aria-pressed="${this.brush === k}">${l}</button>`).join("")}</div>
-      <button class="tog" type="button" data-bga="arrows" aria-pressed="${this.arrows}"><i></i>Variables</button>` : ""}<button class="btn sm" type="button" data-bg="fit" title="Recentrer (double-clic)">Recentrer</button>`;
+      <button class="tog" type="button" data-bga="arrows" aria-pressed="${this.arrows}"><i></i>Variables</button>` : ""}<button class="btn sm" type="button" data-bg="fit" title="Recentrer (double-clic)">Recentrer</button><button class="hq" type="button" data-help="carte" aria-label="Aide">?</button>`;
   },
   rampColors() { return isDark() ? ["#141B4D", "#2A3FD6", "#3B8BFF", "#4FD8E8", "#C8F6FF", "#FFFFFF"].map(hexRGB) : ["#DDE4FF", "#8EA6FF", "#3D5BE0", "#1E2E9E", "#0C1452"].map(hexRGB); },
   fitBox(a, b) { const e = this.acp.ext, cx = (e[a][0] + e[a][1]) / 2, cy = (e[b][0] + e[b][1]) / 2, h = Math.max(e[a][1] - e[a][0], e[b][1] - e[b][0]) / 2; return [cx - h, cx + h, cy - h, cy + h]; },   // echelle identique sur les deux axes
@@ -234,7 +234,7 @@ const BigUI = {
   filterLabel(f) { if (f.type === "rect") return `Rectangle sur le plan ${f.a + 1}·${f.b + 1}`; if (f.type === "poly") return `Lasso sur le plan ${f.a + 1}·${f.b + 1}`; if (f.type === "range") return `${f.col} entre ${fmtNum(f.lo)} et ${fmtNum(f.hi)}`; if (f.type === "cats") { const c = this.s.cat.find(x => x.name === f.col); return `${f.col} = ${liste(f.codes.map(k => c.labels[k] ?? "(autres)"), 3)}`; } if (f.type === "class") return `Classe${f.codes.length > 1 ? "s" : ""} ${f.codes.map(k => "C" + (k + 1)).join(", ")}`; return "Atypiques (T² ou Q)"; },
   renderFilters() { const el = $("#bgFilters"); if (!el) return;
     const ur = `<button class="btn sm ic" type="button" data-bg="undo" title="Annuler (Ctrl + Z)" ${this.hist.length ? "" : "disabled"}>↶</button><button class="btn sm ic" type="button" data-bg="redo" title="Rétablir (Ctrl + Maj + Z)" ${this.fut.length ? "" : "disabled"}>↷</button>`;
-    el.innerHTML = (this.filters.length ? this.filters.map((f, i) => `<span class="fchip">${esc(this.filterLabel(f))}<button type="button" data-bgf="${i}" aria-label="Retirer le filtre">×</button></span>`).join("") + `<button class="btn sm" type="button" data-bg="clear">Tout effacer</button>` : `<span class="muted" style="font-size:12.5px">Aucun filtre</span>`) + ur; },
+    el.innerHTML = (this.filters.length ? this.filters.map((f, i) => `<span class="fchip">${esc(this.filterLabel(f))}<button type="button" data-bgf="${i}" aria-label="Retirer le filtre">×</button></span>`).join("") + `<button class="btn sm" type="button" data-bg="clear">Tout effacer</button>` : `<span class="muted" style="font-size:12.5px">Aucun filtre</span>`) + ur; Hist.ui(); },
   renderVars() {
     const el = $("#bgVars"); if (!el) return; const S = this.sel && this.sel.count !== null ? this.sel : null;
     el.innerHTML = this.s.num.map((c, j) => this.histSVG(c, S ? S.num[j] : null, this.filters.find(f => f.type === "range" && f.col === c.name))).join("") + this.s.cat.map((c, j) => this.catHTML(c, S ? S.cat[j] : null, this.filters.find(f => f.type === "cats" && f.col === c.name))).join("");

@@ -1,6 +1,6 @@
 {
   "name": "prisme-studio",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "private": true,
   "description": "Visualisation et analyse multidimensionnelle dans le navigateur : ACP, ACM, AFC, classes, projections, grands volumes.",
   "scripts": {

@@ -33,7 +33,7 @@ const PrismeAPI = {
   loadTable(t, name, method) { loadTable(t, name, null); if (method && method !== state.method) setMethod(method); return this.summary(); },
   loadCSV(text, name = "donnees.csv", method) { return this.loadTable(parseCSV(text, name), name, method); },
   loadRows(rows, name = "donnees", method) { return this.loadTable(tableFromObjects(rows, name), name, method); },
-  async loadURL(url, method) { const t = await readURL(url); return this.loadTable(t, t.name, method); },
+  async loadURL(url, method) { const t = await readURL(url), s = this.loadTable(t, t.name, method); state.dataURL = new URL(url, location.href).href; return s; },
   setMethod(m) { setMethod(m); return this.summary(); },
   select(indices) { Sel.set(indices, "api"); },
   // grands volumes : File, URL ou texte CSV ; resout avec le resume (lignes, axes, inertie)
@@ -61,11 +61,12 @@ function bindAPI() {
   });
   if (embedded()) window.parent.postMessage({ type: "prisme:ready", data: { version: PRISME_VERSION } }, "*");
 }
-// parametres d'URL : ?data=...&method=...&tab=...&theme=...
+// parametres d'URL : ?data=...&method=...&tab=...&theme=...&ex=exemple&lang=en&view=... (vue partagee)
 async function startFromURL() {
   const u = new URLSearchParams(location.search), th = u.get("theme"), tab = u.get("tab");
   if (th === "dark" || th === "light") document.documentElement.dataset.theme = th;
   if (tab) state.tab = tab;
+  const ex = u.get("ex"); if (ex && EXEMPLES[ex]) { loadTable(parseCSV(EXEMPLES[ex].csv, EXEMPLES[ex].file), EXEMPLES[ex].file, ex); if (u.get("method")) setMethod(u.get("method")); return true; }
   if (u.get("data") && (u.get("mode") === "big" || await isBigURL(new URL(u.get("data"), location.href).href))) return { big: u.get("data") };   // grands volumes : ouvert apres le demarrage du Studio
   if (u.get("data")) { try { setBusy("chargement des données"); await PrismeAPI.loadURL(u.get("data"), u.get("method") || undefined); setBusy(null); return true; } catch (e) { setBusy(null); toast(e.message); } }
   return false;

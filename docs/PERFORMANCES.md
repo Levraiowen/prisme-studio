@@ -69,7 +69,7 @@ Les méthodes dont le coût croît comme n² travaillent sur un échantillon al�
 
 ## Mode grands volumes (plusieurs millions de lignes)
 
-Au-delà de 40 Mo, un CSV s'ouvre en **mode grands volumes**, qui fonctionne autrement que le Studio :
+Au-delà de 40 Mo (25 Mo pour Excel, 400 000 lignes pour Parquet), un fichier s'ouvre en **mode grands volumes**, qui fonctionne autrement que le Studio :
 - le fichier est lu en flux, par morceaux de 8 Mo, dans un Web Worker ;
 - les données sont rangées en colonnes compactes : 4 octets par nombre (`Float32`), 2 octets par modalité ;
 - aucune ligne n'est créée en objet JavaScript ;
@@ -81,6 +81,7 @@ On peut aussi forcer ce mode : case « Grands volumes » sous la zone de dépôt
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 M lignes × 24 colonnes (144 Mo), moteur | 1,7 s | 0,4 s | 20 ms | 0,2 s | 0,4 s | 128 Mo |
 | 2 M lignes × 16 colonnes (184 Mo, format français), **Chrome** | 2,7 s | 0,9 s | 33 ms | 0,3 à 0,5 s | 1,0 s | 103 Mo |
+| Parquet 250 000 lignes × 9 colonnes (11 Mo), **Chrome** | 1,3 s | 0,14 s | 5 ms (relief 200 × 200) | 40 ms (lasso) | — | 5 Mo |
 | 10 M lignes × 24 colonnes (1,45 Go), moteur | 11,1 s (130 Mo/s) | 3,4 s | 75 à 90 ms | 1,6 s | 0,9 s | 1,2 Go |
 
 - **Toutes les lignes, calcul exact** :
