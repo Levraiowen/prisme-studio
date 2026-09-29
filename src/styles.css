@@ -839,7 +839,7 @@ body.bigmode main > .stage, body.bigmode main > .kpis, body.bigmode main > .tabs
   .mbar svg{width:20px;height:20px}
   body.bigmode .mbar [data-mb="stage"]{display:none} body.bigmode .mbar{grid-template-columns:repeat(3,1fr)}
   .stage{height:clamp(360px,62vh,560px);border-radius:16px}
-  .tabs{position:sticky;top:0;z-index:15;scroll-snap-type:x proximity;-webkit-mask:linear-gradient(90deg,#000 88%,transparent);mask:linear-gradient(90deg,#000 88%,transparent)}
+  .tabs{position:sticky;top:0;z-index:15;scroll-snap-type:x proximity}
   .tabs button{scroll-snap-align:start;padding:10px 12px;font-size:13.5px} .tabs .tg{display:none}
   .card{padding:13px}
   .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px));max-width:calc(100% - 24px)}
@@ -857,3 +857,10 @@ body.bigmode main > .stage, body.bigmode main > .kpis, body.bigmode main > .tabs
   .brand div{display:none} .top{gap:6px} .top .iconbtn{width:32px;height:32px} .top .btn{padding:7px 8px}
 }
 @media (hover:none){ .hq{width:24px;height:24px} }
+/* ------------------------------------------------------------------ barres a defilement lateral : glisser a la souris, fondu du cote qui continue */
+.tabs{cursor:grab;-webkit-user-select:none;user-select:none}
+.tabs.dragging,.tabs.dragging *{cursor:grabbing!important}
+.tabs.dragging{scroll-snap-type:none}
+.tabs.more-r,.hud-bl.more-r{-webkit-mask:linear-gradient(90deg,#000 calc(100% - 56px),transparent);mask:linear-gradient(90deg,#000 calc(100% - 56px),transparent)}
+.tabs.more-l,.hud-bl.more-l{-webkit-mask:linear-gradient(90deg,transparent,#000 56px);mask:linear-gradient(90deg,transparent,#000 56px)}
+.tabs.more-l.more-r,.hud-bl.more-l.more-r{-webkit-mask:linear-gradient(90deg,transparent,#000 56px,#000 calc(100% - 56px),transparent);mask:linear-gradient(90deg,transparent,#000 56px,#000 calc(100% - 56px),transparent)}

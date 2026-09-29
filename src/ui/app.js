@@ -108,6 +108,7 @@ function renderPanel() {
   $("#panel").innerHTML = ({ synthese: pSynthese, axes: pAxes, variables: pVariables, individus: pIndividus, insights: pInsights, projections: pProjections, classes: pClasses, matrices: pMatrices, hyper: pHyper, cible: pCible, comparer: pCompare, temps: pTemps, profil: pProfil, simulateur: pSim, labo: pLabo, rapport: pRapport })[state.tab](r);
   if (state.tab === "hyper") Hyper.mount(); if (state.tab === "projections") ProjUI.mount(); if (state.tab === "matrices") MatUI.mount(); if (state.tab === "individus") markSelRows();
   if (state.tab === "simulateur") Sim.update();
+  HScroll.reveal($("#tabs"), $('#tabs [aria-selected="true"]'));
   if (state.tab === "labo") Labo.autostart();
 }
 const heatCorr = (r, P) => svgHeat(r.R, r.vars, r.vars, P, { tri: true, rot: true, cell: (v, i, j) => ({ t: i === j ? "1" : frs(v), f: i === j ? .35 : v }) });

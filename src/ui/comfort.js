@@ -291,8 +291,36 @@ const Mobile = {
   },
 };
 
+/* ---------------------------------------------------------------- barres qui defilent de cote (onglets, boutons de la 3D) */
+// a la souris : on attrape la barre et on la tire (un glisser n'ouvre pas l'onglet sous le curseur) ;
+// au doigt et au pave tactile, le defilement natif reste ; un fondu signale le cote ou il reste des onglets
+const HScroll = {
+  attach(el) {
+    if (!el || el.__hs) return; el.__hs = true;
+    const edges = () => { const m = el.scrollWidth - el.clientWidth; el.classList.toggle("more-l", el.scrollLeft > 2); el.classList.toggle("more-r", el.scrollLeft < m - 2); };
+    let st = null, moved = false;
+    el.addEventListener("pointerdown", e => { moved = false; if (e.pointerType === "touch" || e.button !== 0 || el.scrollWidth <= el.clientWidth + 1) return; st = { x: e.clientX, s: el.scrollLeft, id: e.pointerId }; });
+    el.addEventListener("pointermove", e => {
+      if (!st) return; const dx = e.clientX - st.x; if (!moved && Math.abs(dx) < 6) return;
+      if (!moved) { moved = true; el.classList.add("dragging"); try { el.setPointerCapture(st.id); } catch (err) {} }
+      el.scrollLeft = st.s - dx;
+    });
+    const end = () => { st = null; el.classList.remove("dragging"); };
+    el.addEventListener("pointerup", end); el.addEventListener("pointercancel", end); el.addEventListener("lostpointercapture", end);
+    el.addEventListener("click", e => { if (moved) { e.preventDefault(); e.stopPropagation(); moved = false; } }, true);
+    el.addEventListener("dragstart", e => e.preventDefault());
+    el.addEventListener("scroll", edges, { passive: true }); new ResizeObserver(edges).observe(el); edges();
+  },
+  // amene un element dans la partie visible de la barre (onglet choisi depuis la palette, un lien ou un raccourci)
+  reveal(el, item) {
+    if (!el || !item || el.scrollWidth <= el.clientWidth + 1) return; const r = item.getBoundingClientRect(), c = el.getBoundingClientRect(), pad = 40;
+    if (r.left < c.left + pad) el.scrollBy({ left: r.left - c.left - pad, behavior: reduced ? "auto" : "smooth" });
+    else if (r.right > c.right - pad) el.scrollBy({ left: r.right - c.right + pad, behavior: reduced ? "auto" : "smooth" });
+  },
+};
+
 function bindComfort() {
-  I18N.bind(); Help.bind(); Mobile.bind();
+  I18N.bind(); Help.bind(); Mobile.bind(); HScroll.attach($("#tabs")); HScroll.attach($("#toggles"));
   $("#undoBtn").onclick = () => Hist.doUndo(); $("#redoBtn").onclick = () => Hist.doRedo();
   $("#shareBtn").onclick = () => Share.copy(); $("#langBtn").onclick = () => I18N.set(I18N.lang === "en" ? "fr" : "en");
   const hb = document.createElement("button"); hb.className = "hq"; hb.type = "button"; hb.dataset.help = "stage"; hb.setAttribute("aria-label", "Aide"); document.querySelector(".hud-tl .eyebrow")?.appendChild(hb);
